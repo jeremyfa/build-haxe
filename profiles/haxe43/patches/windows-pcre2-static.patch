@@ -1,0 +1,11 @@
+diff --git a/libs/pcre2/dune b/libs/pcre2/dune
+--- a/libs/pcre2/dune
++++ b/libs/pcre2/dune
+@@ -4,6 +4,7 @@
+ 	(name pcre2)
+ 	(foreign_stubs
+ 		(language c)
++		(flags :standard -DPCRE2_STATIC)
+ 		(names pcre2_stubs))
+ 	(wrapped false)
+ )

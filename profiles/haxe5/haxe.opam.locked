@@ -1,0 +1,85 @@
+opam-version: "2.0"
+name: "haxe"
+version: "4.3.0"
+synopsis: "Multi-target universal programming language"
+description: """\
+Haxe is an open source toolkit based on a modern,
+high level, static-typed programming language, a cross-compiler,
+a complete cross-platform standard library and ways to access each
+platform's native capabilities."""
+maintainer: [
+  "Haxe Foundation <contact@haxe.org>" "Andy Li <andy@onthewings.net>"
+]
+authors: "Haxe Foundation <contact@haxe.org>"
+license: ["GPL-2.0-or-later" "MIT"]
+homepage: "https://haxe.org/"
+bug-reports: "https://github.com/HaxeFoundation/haxe/issues"
+depends: [
+  "astring" {= "0.8.5"}
+  "backoff" {= "0.1.1"}
+  "base-bigarray" {= "base"}
+  "base-domains" {= "base"}
+  "base-effects" {= "base"}
+  "base-nnp" {= "base"}
+  "base-threads" {= "base"}
+  "base-unix" {= "base"}
+  "camlp-streams" {= "5.0.1"}
+  "conf-libpcre2-8" {= "2"}
+  "conf-neko" {= "1"}
+  "conf-pkg-config" {= "5"}
+  "conf-zlib" {= "1"}
+  "cppo" {= "1.8.0"}
+  "csexp" {= "1.5.2"}
+  "cstruct" {= "6.3.0"}
+  "ctypes" {= "0.24.0"}
+  "domain-local-await" {= "1.0.1"}
+  "domain-name" {= "0.5.0"}
+  "domainslib" {= "0.5.2"}
+  "dune" {= "3.24.2"}
+  "dune-compiledb" {= "0.6.0"}
+  "dune-configurator" {= "3.24.2"}
+  "dynamic_gc" {= "0.2.0"}
+  "extlib" {= "1.8.0"}
+  "ezjsonm" {= "1.3.0"}
+  "fmt" {= "0.11.0"}
+  "fpath" {= "0.7.3"}
+  "gen" {= "1.1"}
+  "hex" {= "1.5.0"}
+  "integers" {= "0.8.0"}
+  "ipaddr" {= "5.6.2"}
+  "jsonm" {= "1.0.2"}
+  "luv" {= "0.5.14"}
+  "macaddr" {= "5.6.2"}
+  "multicore-magic" {= "2.3.2"}
+  "num" {= "1.6"}
+  "ocaml" {= "5.3.0"}
+  "ocaml-base-compiler" {= "5.3.0"}
+  "ocaml-compiler" {= "5.3.0"}
+  "ocaml-compiler-libs" {= "v0.17.0"}
+  "ocaml-config" {= "3"}
+  "ocaml-options-vanilla" {= "1"}
+  "ocamlbuild" {= "0.16.1"}
+  "ocamlfind" {= "1.9.8"}
+  "parsexp" {= "v0.17.0"}
+  "pcre2" {= "8.0.4"}
+  "ppx_derivers" {= "1.2.1"}
+  "ppx_parser" {= "0.2.1"}
+  "ppxlib" {= "0.39.0"}
+  "saturn" {= "1.0.0"}
+  "sedlex" {= "3.8.1"}
+  "seq" {= "base"}
+  "sexplib" {= "v0.17.0"}
+  "sexplib0" {= "v0.17.0"}
+  "sha" {= "1.15.4"}
+  "stdlib-shims" {= "0.3.0"}
+  "terminal_size" {= "0.2.0"}
+  "thread-local-storage" {= "0.2"}
+  "thread-table" {= "1.0.0"}
+  "topkg" {= "1.1.1"}
+  "uutf" {= "1.0.4"}
+  "xml-light" {= "2.5"}
+]
+build: make
+install: [make "install" "INSTALL_DIR=%{prefix}%"]
+remove: [make "uninstall" "INSTALL_DIR=%{prefix}%"]
+dev-repo: "git+https://github.com/HaxeFoundation/haxe.git"

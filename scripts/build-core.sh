@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Compile the haxe binary for a target, linking the static C libraries.
+# Usage: scripts/build-core.sh <target>
+# Requires HAXE_PROFILE, scripts/build-deps.sh and scripts/setup-switch.sh.
+# Output: build/<profile>/<target>/stage/{haxe[.exe],commit.txt,build_info.txt}
+#
+# dune is called directly (mirroring the `haxe` target of each branch's
+# Makefile) so that every target gets its own DUNE_BUILD_DIR inside the
+# shared clone.
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+
+target="${1:?usage: build-core.sh <target>}"
+check_target "$target"
+load_profile
+sanitize_env "$target"
+
+os="$(target_os "$target")"
+arch="$(target_arch "$target")"
+prefix="$(deps_prefix "$target")"
+stage="$(stage_dir "$target")"
+export DUNE_BUILD_DIR
+DUNE_BUILD_DIR="$(dune_build_dir "$target")"
+exe=""
+[ "$os" = "windows" ] && exe=".exe"
+
+command -v dune >/dev/null || die "dune not found: run scripts/setup-switch.sh $target"
+mkdir -p "$stage"
+record_env "$ROOT/build/$HAXE_PROFILE/$target/build_env.txt"
+
+# ---- profile patches, reverted on exit so the clone stays clean
+applied=()
+revert_patches() {
+    local p
+    for p in "${applied[@]+"${applied[@]}"}"; do
+        git -C "$HAXE_DIR" apply -R "$p" || warn "could not revert $p"
+    done
+}
+trap revert_patches EXIT
+for p in "$ROOT/profiles/$HAXE_PROFILE/patches/"*.patch; do
+    [ -f "$p" ] || continue
+    case "$(basename "$p")" in
+        all-*|"$os"-*) ;;
+        *) continue ;;
+    esac
+    log "applying $(basename "$p")"
+    git -C "$HAXE_DIR" apply --check "$p"
+    git -C "$HAXE_DIR" apply "$p"
+    applied+=("$p")
+done
+
+# ---- link flags for the C libraries
+case "$os" in
+    mac)
+        libparams=("$prefix/lib/libpcre2-8.a" "$prefix/lib/libz.a" "$prefix/lib/libmbedtls.a"
+            "$prefix/lib/libmbedx509.a" "$prefix/lib/libmbedcrypto.a")
+        # The development branch appends the frameworks itself (prebuild.ml).
+        if [ "$PROFILE_BUILD_STYLE" = "dune-workspace-dev" ]; then
+            libparams+=(-cclib "-framework Security -framework CoreFoundation")
+        fi
+        ;;
+    linux)
+        libparams=(-ccopt "-L$prefix/lib" -cclib -lpcre2-8 -cclib -lz -cclib -lmbedtls
+            -cclib -lmbedx509 -cclib -lmbedcrypto -ccopt -static)
+        ;;
+    windows)
+        libparams=(-ccopt "-L$(cygpath -m "$prefix/lib")" -cclib -lpcre2-8 -cclib -lz -cclib -lmbedtls
+            -cclib -lmbedx509 -cclib -lmbedcrypto -cclib -lcrypt32 -cclib -lws2_32 -cclib -lbcrypt
+            -ccopt -static)
+        ;;
+esac
+
+# In the Linux containers the clone is a bind mount from the host, which is
+# case-insensitive on macOS and breaks dune. Build from a copy inside the
+# container instead (BUILD_HAXE_COPY_SOURCES=1, set by build-haxe-linux.sh).
+src_root="$HAXE_DIR"
+if [ "${BUILD_HAXE_COPY_SOURCES:-0}" = "1" ]; then
+    src_root="${TMPDIR:-/tmp}/haxe-src-$target"
+    [ ! -e "$src_root" ] || die "$src_root already exists"
+    mkdir -p "$src_root"
+    log "copying sources to $src_root"
+    tar -C "$HAXE_DIR" --exclude='./_build*' -cf - . | tar -C "$src_root" -xf -
+fi
+
+cd "$src_root"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+short="$(git rev-parse --short HEAD)"
+
+case "$PROFILE_BUILD_STYLE" in
+    dune-release)
+        # src/prebuild.ml reads LIB_PARAMS from the environment and pastes it
+        # verbatim inside the link_flags s-expression.
+        LIB_PARAMS=""
+        for a in "${libparams[@]}"; do LIB_PARAMS+="\"$a\" "; done
+        export LIB_PARAMS
+        export STATICLINK=1
+        log "building haxe ($HAXE_PROFILE, $target)"
+        dune build -j "$JOBS" --profile release src/haxe.exe
+        ;;
+    dune-workspace-dev)
+        log "building prebuild ($HAXE_PROFILE, $target)"
+        dune build -j "$JOBS" --workspace dune-workspace.dev src-prebuild/prebuild.exe
+        prebuild="$DUNE_BUILD_DIR/default/src-prebuild/prebuild.exe"
+        "$prebuild" libparams "${libparams[@]}" > lib.sexp
+        "$prebuild" version "${ADD_REVISION:-0}" "$branch" "$short" > src/compiler/version.ml
+        log "building haxe ($HAXE_PROFILE, $target)"
+        dune build -j "$JOBS" --workspace dune-workspace.dev src/haxe.exe
+        ;;
+    *) die "unknown PROFILE_BUILD_STYLE '$PROFILE_BUILD_STYLE'" ;;
+esac
+
+cp -f "$DUNE_BUILD_DIR/default/src/haxe.exe" "$stage/haxe$exe"
+chmod +x "$stage/haxe$exe"
+
+# ---- metadata
+haxe_commit > "$stage/commit.txt"
+{
+    echo "Haxe repository: $(git remote get-url origin)"
+    echo "Haxe commit: $(haxe_commit)"
+    echo "Haxe commit date: $(git show -s --format=%cI HEAD)"
+    echo "haxelib commit: $(git -C extra/haxelib_src rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo "Profile: $HAXE_PROFILE"
+    echo "Target: $target"
+    echo "OCaml: $OCAML_VERSION"
+    echo "zlib: $ZLIB_VERSION"
+    echo "pcre2: $PCRE2_VERSION"
+    echo "mbedtls: $MBEDTLS_VERSION"
+    echo "neko: $NEKO_VERSION"
+    echo "opam-repository: $OPAM_REPO_COMMIT"
+    [ -n "${MACOSX_DEPLOYMENT_TARGET:-}" ] && echo "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET"
+    echo "Build host: $HOST_OS-$HOST_ARCH"
+    echo "Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "opam packages:"
+    opam list --columns=name,version --short 2>/dev/null | sed 's/^/  /' || true
+} > "$stage/build_info.txt"
+
+log "haxe built: $stage/haxe$exe ($("$stage/haxe$exe" --version 2>&1 || echo "version check failed"))"

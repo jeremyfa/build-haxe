@@ -1,0 +1,5 @@
+/haxe
+/.cache
+/build
+.haxe_commit
+.DS_Store
