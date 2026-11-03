@@ -100,8 +100,17 @@ if [ "$os" = "mac" ] && [ -f "$work/tests/sys/compile-fs.hxml" ]; then
     : > "$work/tests/sys/compile-fs.hxml"
 fi
 
+# Some tests (TestDate) assume UTC, as on the official CI.
+export TZ=UTC
+
 log "haxe: $(haxe --version), haxelib: $(haxelib version 2>/dev/null || echo '?')"
-log "running RunCi ($tests) for $HAXE_PROFILE/$target"
 cd "$work/tests"
-TEST="$tests" haxe RunCi.hxml
+# One RunCi run per test target. RunCi starts an echo server (nekotools
+# server on port 20200) for every target and never stops it, so chaining
+# targets in one run leaves the next target talking to the previous server.
+IFS=',' read -r -a test_list <<< "$tests"
+for t in "${test_list[@]}"; do
+    log "running RunCi ($t) for $HAXE_PROFILE/$target"
+    TEST="$t" haxe RunCi.hxml
+done
 log "tests passed: $tests"

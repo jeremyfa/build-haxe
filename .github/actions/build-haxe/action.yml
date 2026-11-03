@@ -197,6 +197,26 @@ runs:
         opam-repositories: |
           pinned: git+https://github.com/ocaml/opam-repository#${{ steps.info.outputs.OPAM_REPO_COMMIT }}
 
+    # The Cygwin bash where opam, make and the mingw gcc live. setup-ocaml v3
+    # lets opam install its own Cygwin under <opam root>\.cygwin\root; older
+    # setups used C:\cygwin or D:\cygwin.
+    - name: Find the Cygwin bash (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $candidates = @()
+        $root = (opam var root 2>$null)
+        if ($root) { $candidates += (Join-Path $root '.cygwin\root\bin\bash.exe') }
+        if ($env:OPAMROOT) { $candidates += (Join-Path $env:OPAMROOT '.cygwin\root\bin\bash.exe') }
+        $candidates += 'C:\.opam\.cygwin\root\bin\bash.exe', 'D:\cygwin\bin\bash.exe', 'C:\cygwin\bin\bash.exe'
+        $bash = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $bash) {
+          Write-Error ("Cygwin bash not found. Tried: " + ($candidates -join ', '))
+          exit 1
+        }
+        Write-Host "Cygwin bash: $bash"
+        "CYGWIN_BASH=$bash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
     - name: Build (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
@@ -204,10 +224,7 @@ runs:
       env:
         OPAMEXTERNALSOLVER: builtin-mccs+glpk
       run: |
-        # The Cygwin bash of setup-ocaml (opam, make and the mingw gcc live there).
-        $bash = 'D:\cygwin\bin\bash.exe'
-        if (-not (Test-Path $bash)) { $bash = 'C:\cygwin\bin\bash.exe' }
-        opam exec -- $bash -c "SKIP_SETUP=1 ./build-haxe-windows.sh"
+        opam exec -- $env:CYGWIN_BASH -c "SKIP_SETUP=1 ./build-haxe-windows.sh"
         if ($LASTEXITCODE -ne 0) { exit 1 }
 
     # ---- tests and outputs
@@ -222,9 +239,7 @@ runs:
       shell: pwsh
       working-directory: ${{ env.BUILD_HAXE_ROOT }}
       run: |
-        $bash = 'D:\cygwin\bin\bash.exe'
-        if (-not (Test-Path $bash)) { $bash = 'C:\cygwin\bin\bash.exe' }
-        opam exec -- $bash -c "./test-haxe.sh windows-x64"
+        opam exec -- $env:CYGWIN_BASH -c "./test-haxe.sh windows-x64"
         if ($LASTEXITCODE -ne 0) { exit 1 }
 
     - name: Output paths
