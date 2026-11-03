@@ -62,10 +62,10 @@ if [ "${BUILD_HAXE_COPY_SOURCES:-0}" = "1" ]; then
     tar -C "$HAXE_DIR" --exclude='./_build*' -cf - . | tar -C "$src_root" -xf -
 fi
 
-# ---- profile patches, applied with patch(1) (git apply would look for an
-# enclosing repository). Reverted on exit when applied to the sources in
-# place, so that they stay as they were. A patch already applied (a copy taken
-# while another build had applied it) is left as is.
+# ---- profile patches (apply_patch_once in common.sh). Reverted on exit when
+# applied to the sources in place, so that they stay as they were. A patch
+# that the sources already contain (a fork with the patch merged, or a copy
+# taken while another build had applied it) is skipped and never reverted.
 applied=()
 revert_patches() {
     local p
@@ -81,14 +81,9 @@ for p in "${PROFILE_PATCHES[@]+"${PROFILE_PATCHES[@]}"}"; do
         all-*|"$os"-*) ;;
         *) continue ;;
     esac
-    if (cd "$src_root" && patch -p1 -R -f -s --dry-run < "$p" >/dev/null 2>&1); then
-        log "$(basename "$p") already applied"
-        continue
-    fi
-    log "applying $(basename "$p")"
-    (cd "$src_root" && patch -p1 -f -s --dry-run < "$p" >/dev/null) || die "$p does not apply to the Haxe sources"
-    (cd "$src_root" && patch -p1 -f -s < "$p")
-    applied+=("$p")
+    result="$(apply_patch_once "$src_root" "$p")"
+    log "$(basename "$p"): $result"
+    if [ "$result" = "applied" ]; then applied+=("$p"); fi
 done
 
 cd "$src_root"

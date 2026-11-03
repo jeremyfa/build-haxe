@@ -75,17 +75,22 @@ fi
 
 # ---- sources
 work="$PRODUCTS_CACHE_DIR/neko-work/$NEKO_NAME-$patch_id/$target"
-archive="$(download "https://codeload.github.com/HaxeFoundation/neko/tar.gz/$NEKO_COMMIT" "$NEKO_SHA256")"
-src="$work/neko-$NEKO_COMMIT"
+log "neko $NEKO_NAME: $NEKO_REPO at $NEKO_COMMIT"
+archive="$(download "$NEKO_URL" "$NEKO_SHA256")"
+src="$work/src"
 if [ ! -d "$src" ]; then
-    mkdir -p "$work"
-    tar -xzf "$archive" -C "$work"
+    # The archive holds a single top-level folder, whatever its name.
+    mkdir -p "$work/src.extract.$$"
+    tar -xzf "$archive" -C "$work/src.extract.$$"
+    top="$(find "$work/src.extract.$$" -mindepth 1 -maxdepth 1 -type d | head -1)"
+    [ -n "$top" ] && [ -f "$top/CMakeLists.txt" ] || die "$NEKO_URL does not hold the neko sources"
+    mv "$top" "$src"
+    # Patches already merged in the sources (a fork) are skipped.
     for p in "$ROOT"/patches/neko/*.patch; do
-        log "applying $(basename "$p")"
-        (cd "$src" && patch -p1 --forward --quiet < "$p")
+        log "$(basename "$p"): $(apply_patch_once "$src" "$p")"
     done
 fi
-build="$work/build"
+build="$work/build-src"
 mkdir -p "$build"
 
 # Prefetch the dependencies pinned in neko's CMakeLists (URL + URL_HASH) into

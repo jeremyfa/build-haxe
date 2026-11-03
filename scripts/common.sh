@@ -142,10 +142,27 @@ load_profile() {
         MBEDTLS_VERSION="$MBEDTLS2_VERSION"; MBEDTLS_URL="$MBEDTLS2_URL"; MBEDTLS_SHA256="$MBEDTLS2_SHA256"
     fi
     local v
-    v="NEKO_${NEKO_SOURCE}_COMMIT"; NEKO_COMMIT="${!v:?unknown NEKO_SOURCE $NEKO_SOURCE}"
-    v="NEKO_${NEKO_SOURCE}_SHA256"; NEKO_SHA256="${!v}"
-    v="NEKO_${NEKO_SOURCE}_NAME"; NEKO_NAME="${!v}"
-    export HAXE_PROFILE OCAML_VERSION MBEDTLS_SERIES MBEDTLS_VERSION NEKO_COMMIT NEKO_NAME
+    # neko source NEKO_SOURCE (see versions.env)
+    local lower
+    v="NEKO_${NEKO_SOURCE}_COMMIT"; NEKO_COMMIT="${!v:-}"
+    [ -n "$NEKO_COMMIT" ] || die "neko source $NEKO_SOURCE: NEKO_${NEKO_SOURCE}_COMMIT is not set"
+    v="NEKO_${NEKO_SOURCE}_SHA256"; NEKO_SHA256="${!v:-}"
+    [ -n "$NEKO_SHA256" ] || die "neko source $NEKO_SOURCE: NEKO_${NEKO_SOURCE}_SHA256 is not set"
+    v="NEKO_${NEKO_SOURCE}_REPO"; NEKO_REPO="${!v:-https://github.com/HaxeFoundation/neko}"
+    lower="$(echo "$NEKO_SOURCE" | tr '[:upper:]' '[:lower:]')"
+    v="NEKO_${NEKO_SOURCE}_NAME"; NEKO_NAME="${!v:-$lower-${NEKO_COMMIT:0:7}}"
+    v="NEKO_${NEKO_SOURCE}_URL"; NEKO_URL="${!v:-}"
+    if [ -z "$NEKO_URL" ]; then
+        case "$NEKO_REPO" in
+            https://github.com/*/*)
+                local slug="${NEKO_REPO#https://github.com/}"
+                slug="${slug%.git}"; slug="${slug%/}"
+                NEKO_URL="https://codeload.github.com/$slug/tar.gz/$NEKO_COMMIT"
+                ;;
+            *) die "neko source $NEKO_SOURCE: $NEKO_REPO is not a GitHub repository, set NEKO_${NEKO_SOURCE}_URL to the source archive" ;;
+        esac
+    fi
+    export HAXE_PROFILE OCAML_VERSION MBEDTLS_SERIES MBEDTLS_VERSION NEKO_COMMIT NEKO_NAME NEKO_REPO
 }
 
 # Paths. C libraries and neko go to the products cache (build/ or
@@ -250,6 +267,25 @@ load_source_info() {
 }
 haxe_commit() { load_source_info; echo "$SRC_COMMIT"; }
 haxe_short() { load_source_info; echo "$SRC_SHORT"; }
+
+# Apply a patch to a source folder unless the sources already contain it (a
+# fork with the patch merged). Prints "applied" or "already applied", fails
+# when the patch neither applies nor is present.
+# patch(1) is used rather than git apply, which would look for an enclosing
+# repository. -f keeps both BSD patch (macOS) and GNU patch from asking or
+# guessing: without it, BSD patch answers its own "Reversed patch detected!
+# Ignore -R?" question and reports an unapplied patch as present.
+apply_patch_once() {
+    local dir="$1" p="$2"
+    if (cd "$dir" && patch -p1 -R -f -s --dry-run < "$p" >/dev/null 2>&1); then
+        echo "already applied"
+    elif (cd "$dir" && patch -p1 -f -s --dry-run < "$p" >/dev/null 2>&1); then
+        (cd "$dir" && patch -p1 -f -s < "$p") >/dev/null
+        echo "applied"
+    else
+        die "$(basename "$p") does not apply to $dir"
+    fi
+}
 
 # True when the sources are the clone made by setup-haxe.sh (git commands
 # may then run in it).

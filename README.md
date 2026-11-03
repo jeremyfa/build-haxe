@@ -192,6 +192,31 @@ neko is compiled from pinned sources by `scripts/build-neko.sh`, the same way ne
 
 haxelib comes from the `extra/haxelib_src` submodule of the Haxe repository, so its version follows the Haxe commit. The build compiles its client to neko bytecode with the freshly built `haxe` (`run.n`), then `nekotools boot` turns it into a small native launcher linked to libneko, with an rpath to the `neko/` folder next to it. haxelib is therefore exactly as portable as neko.
 
+## Using forks of Haxe and neko
+
+Both can come from forks, with or without the patches of build-haxe merged.
+
+**Haxe**: point `HAXE_REPO` (with `HAXE_BRANCH` or `HAXE_COMMIT`) to the fork, or `HAXE_SRC_DIR` to a checkout of it.
+
+```bash
+HAXE_REPO=https://github.com/me/haxe.git HAXE_BRANCH=my-branch ./build-haxe-mac.sh
+```
+
+**neko**: a neko source is a set of variables `NEKO_<SOURCE>_*` (see `versions.env`), and `NEKO_SOURCE` picks one. Define one for the fork, in the environment or in a profile of yours (`HAXE_PROFILE_DIR`):
+
+```bash
+export NEKO_SOURCE=MYFORK
+export NEKO_MYFORK_REPO=https://github.com/me/neko
+export NEKO_MYFORK_COMMIT=<full commit sha>
+export NEKO_MYFORK_SHA256=<sha256 of https://codeload.github.com/me/neko/tar.gz/<commit>>
+# optional: NEKO_MYFORK_URL (any source archive, file:// works), NEKO_MYFORK_NAME
+./build-haxe-mac.sh
+```
+
+The sha256 is that of the archive GitHub serves for the commit: `curl -fsSL https://codeload.github.com/me/neko/tar.gz/<commit> | shasum -a 256`. The values of `versions.env` can be overridden the same way (`NEKO_MASTER_COMMIT=...`). The build folder is named after the source and the commit (`myfork-1a2b3c4`), so builds of different sources never mix.
+
+**Patches already merged**: every patch (`patches/neko/` for neko, `patches/` of the profiles for Haxe) is skipped when the sources already contain it, and the log says `<patch>: already applied`. A patch that neither applies nor is present stops the build. This behaves the same with the BSD `patch` of macOS and with GNU `patch` (Linux, Cygwin): both are called with `-f`, without which BSD `patch` takes an unapplied patch for an applied one. The checks of `verify-binary.sh` (decoy modules in `NEKOPATH`, decoy `haxelib` in the `PATH`) then tell whether the merged changes do their job.
+
 ## Profiles
 
 The two maintained Haxe branches need different OCaml dependencies. A profile is a folder in `profiles/`:
