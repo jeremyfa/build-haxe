@@ -163,8 +163,24 @@ case "$os" in
         cmake_args+=(-G Ninja -DCMAKE_C_FLAGS="-ffile-prefix-map=$src=neko")
         ;;
     windows)
-        # neko is built with MSVC on Windows, like the official releases.
-        cmake_args+=(-G "Visual Studio 17 2022" -A x64)
+        # neko is built with MSVC on Windows, like the official releases. The
+        # generator follows the newest Visual Studio installed (GitHub moves
+        # its runners from 2022 to 2026); NEKO_CMAKE_GENERATOR forces one.
+        generator="${NEKO_CMAKE_GENERATOR:-}"
+        if [ -z "$generator" ]; then
+            vswhere="$(cygpath -u "${PROGRAMFILES:-C:\\Program Files} (x86)")/Microsoft Visual Studio/Installer/vswhere.exe"
+            [ -x "$vswhere" ] || vswhere="/cygdrive/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+            [ -x "$vswhere" ] || die "vswhere.exe not found: install Visual Studio with the C++ tools, or set NEKO_CMAKE_GENERATOR"
+            vs="$("$vswhere" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+                -property installationVersion | tr -d '\r' | cut -d. -f1)"
+            case "$vs" in
+                17) generator="Visual Studio 17 2022" ;;
+                18) generator="Visual Studio 18 2026" ;;
+                *) die "unsupported Visual Studio version '$vs' (set NEKO_CMAKE_GENERATOR)" ;;
+            esac
+        fi
+        log "CMake generator: $generator"
+        cmake_args+=(-G "$generator" -A x64)
         ;;
 esac
 

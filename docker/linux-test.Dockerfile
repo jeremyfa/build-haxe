@@ -1,8 +1,15 @@
-# Test image: the glibc build image plus the tools some macro tests call
-# (node, python3, and a JDK for the Java test of 4.3_bugfix).
-# Built on top of build-haxe-glibc:<arch> by test-haxe.sh.
-ARG GLIBC_TAG
-FROM ${GLIBC_TAG}
+# Test image (Ubuntu 22.04, the system of the official Haxe CI, whose package
+# names RunCi expects). It only carries system tools and libraries: the
+# language toolchains (Python, PyPy, Node.js...) come from the pinned archives
+# of test-versions.env, installed by scripts/test/setup-tools.sh, as on macOS.
+ARG TEST_IMAGE
+FROM ${TEST_IMAGE}
 
-RUN DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
-        nodejs python3 default-jdk-headless
+RUN apt-get -o Acquire::Retries=5 update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+        bash ca-certificates curl git xz-utils bzip2 unzip zip file binutils \
+        build-essential pkg-config cmake ninja-build \
+    && git config --system --add safe.directory '*'
+
+ENV BUILD_HAXE_IN_CONTAINER=1
+WORKDIR /workspace

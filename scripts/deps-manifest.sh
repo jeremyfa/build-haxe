@@ -72,13 +72,35 @@ build_deps() {
     done
 }
 
+# Test dependencies of every profile (test-versions.env with the profile's
+# overrides). The same asset can be listed by several profiles.
 test_deps() {
-    # test-versions.env (added with the test suite)
     [ -f "$ROOT/test-versions.env" ] || return 0
-    # shellcheck source=../test-versions.env
-    source "$ROOT/test-versions.env"
-    declare -F test_deps_manifest >/dev/null && test_deps_manifest
-    return 0
+    local profile
+    for profile in "$ROOT"/profiles/*/; do
+        profile="$(basename "$profile")"
+        (
+            HAXE_PROFILE="$profile"
+            load_profile >/dev/null
+            # shellcheck source=../test-versions.env
+            source "$ROOT/test-versions.env"
+            local n v repo commit sha lower key url name
+            for n in $TEST_GIT_DEPS; do
+                v="TEST_GIT_${n}_REPO"; repo="${!v}"
+                v="TEST_GIT_${n}_COMMIT"; commit="${!v}"
+                v="TEST_GIT_${n}_SHA256"; sha="${!v:-}"
+                lower="$(echo "$n" | tr '[:upper:]' '[:lower:]')"
+                emit test "$lower-${commit:0:12}.tar.gz" git "$repo" "$sha" "$commit" "$lower-$commit/"
+            done
+            for v in $(compgen -A variable | grep -E '^TEST_FILE_[A-Z0-9_]+_URL$' | sort); do
+                key="${v#TEST_FILE_}"; key="${key%_URL}"
+                url="${!v}"
+                v="TEST_FILE_${key}_SHA256"; sha="${!v:-}"
+                v="TEST_FILE_${key}_NAME"; name="${!v:-$(asset_name "$url")}"
+                emit test "$name" url "$url" "$sha"
+            done
+        )
+    done
 }
 
 case "$which" in

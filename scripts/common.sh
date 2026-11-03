@@ -322,6 +322,12 @@ mirror_url() {
     echo "$BUILD_HAXE_MIRROR/$tag/$2"
 }
 
+# asset_name <url>: default asset name of a file in the mirror, the basename
+# of the URL with characters GitHub would rename replaced by "_".
+asset_name() {
+    basename "$1" | sed 's/[^A-Za-z0-9._-]/_/g'
+}
+
 # fetch_to <url> <file>: quiet download with retries, 0 on success.
 fetch_to() {
     local out="$2"
@@ -337,7 +343,7 @@ fetch_to() {
 # is kept as <name>.bad (overwritten by the next failure).
 download() {
     local url="$1" sha="$2" name="${3:-}" release="${4:-build}"
-    [ -n "$name" ] || name="$(basename "$url")"
+    [ -n "$name" ] || name="$(asset_name "$url")"
     local dir="$CACHE_DIR/downloads"
     local file="$dir/$name"
     mkdir -p "$dir"
