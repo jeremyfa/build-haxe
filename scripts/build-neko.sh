@@ -76,14 +76,18 @@ fi
 # ---- sources
 work="$PRODUCTS_CACHE_DIR/neko-work/$NEKO_NAME-$patch_id/$target"
 log "neko $NEKO_NAME: $NEKO_REPO at $NEKO_COMMIT"
-archive="$(download "$NEKO_URL" "$NEKO_SHA256")"
+if [ -n "$NEKO_URL" ]; then
+    archive="$(download "$NEKO_URL" "$NEKO_SHA256")"
+else
+    archive="$(fetch_git_archive "$NEKO_ARCHIVE_NAME" "$NEKO_REPO" "$NEKO_COMMIT" "$NEKO_SHA256" "neko-$NEKO_COMMIT/")"
+fi
 src="$work/src"
 if [ ! -d "$src" ]; then
     # The archive holds a single top-level folder, whatever its name.
     mkdir -p "$work/src.extract.$$"
     tar -xzf "$archive" -C "$work/src.extract.$$"
     top="$(find "$work/src.extract.$$" -mindepth 1 -maxdepth 1 -type d | head -1)"
-    [ -n "$top" ] && [ -f "$top/CMakeLists.txt" ] || die "$NEKO_URL does not hold the neko sources"
+    [ -n "$top" ] && [ -f "$top/CMakeLists.txt" ] || die "$archive does not hold the neko sources"
     mv "$top" "$src"
     # Patches already merged in the sources (a fork) are skipped.
     for p in "$ROOT"/patches/neko/*.patch; do
@@ -94,11 +98,11 @@ build="$work/build-src"
 mkdir -p "$build"
 
 # Prefetch the dependencies pinned in neko's CMakeLists (URL + URL_HASH) into
-# .cache/downloads, trying mirrors when the original host is down, and place
-# them where neko's ExternalProject looks first (it then skips the download).
+# the downloads cache (dependency mirror first, then the original host, then
+# known alternative hosts), and place them where neko's ExternalProject looks
+# first (it then skips the download).
 mirrors_for() {
     local url="$1"
-    echo "$url"
     case "$url" in
         https://downloads.mariadb.com/Connectors/c/*)
             echo "https://archive.mariadb.org/${url#https://downloads.mariadb.com/Connectors/c/}" ;;
@@ -108,26 +112,27 @@ mirrors_for() {
             echo "https://github.com/openssl/openssl/releases/download/$v/$f" ;;
     esac
 }
-prefetch_deps() {
-    local dl="$build/libs/download" url sha file cached candidate got
-    mkdir -p "$dl" "$CACHE_DIR/downloads"
+# neko_deps <neko sources>: prints "<url> <sha256>" for each pinned dependency.
+# Also used by scripts/deps-manifest.sh.
+neko_deps() {
     awk '/^[ \t]*URL[ \t]+https?:/{u=$2} /URL_HASH[ \t]+SHA256=/{sub(/.*SHA256=/,""); if(u!=""){print u, $1; u=""}}' \
-        "$src/CMakeLists.txt" "$src"/libs/*/CMakeLists.txt |
-    while read -r url sha; do
+        "$1/CMakeLists.txt" "$1"/libs/*/CMakeLists.txt
+}
+prefetch_deps() {
+    local dl="$build/libs/download" url sha file cached candidate
+    mkdir -p "$dl"
+    neko_deps "$src" | while read -r url sha; do
         file="$(basename "$url")"
-        cached="$CACHE_DIR/downloads/$file"
-        if [ ! -f "$cached" ] || [ "$(sha256_of "$cached")" != "$sha" ]; then
-            for candidate in $(mirrors_for "$url"); do
-                log "downloading $candidate"
-                # Unique temporary name: parallel builds share .cache/downloads.
-                if curl -fsSL --retry 3 --retry-delay 2 --max-time 600 -o "$cached.part.$$" "$candidate"; then
-                    got="$(sha256_of "$cached.part.$$")"
-                    if [ "$got" = "$sha" ]; then mv -f "$cached.part.$$" "$cached"; break; fi
-                    warn "checksum mismatch for $candidate (got $got)"
-                fi
-            done
+        if cached="$(download "$url" "$sha" 2>/dev/null)"; then
+            cp -f "$cached" "$dl/$file"
+            continue
         fi
-        if [ -f "$cached" ] && [ "$(sha256_of "$cached")" = "$sha" ]; then
+        cached=""
+        for candidate in $(mirrors_for "$url"); do
+            if cached="$(download "$candidate" "$sha" "$file" 2>/dev/null)"; then break; fi
+            cached=""
+        done
+        if [ -n "$cached" ]; then
             cp -f "$cached" "$dl/$file"
         else
             warn "could not prefetch $file, neko's CMake will try $url itself"

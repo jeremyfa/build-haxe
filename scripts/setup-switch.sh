@@ -20,23 +20,38 @@ lock="$PROFILE_LOCK"
 [ -f "$HAXE_DIR/haxe.opam" ] || die "$HAXE_DIR/haxe.opam not found (run ./setup-haxe.sh, or set HAXE_SRC_DIR)"
 command -v neko >/dev/null || die "neko not in PATH (run scripts/build-neko.sh $target)"
 
-# opam-repository snapshot, extracted once and shared by every opam root
-opam_repo_snapshot() {
-    local dir="$CACHE_DIR/opam-repository/$OPAM_REPO_COMMIT"
-    if [ ! -f "$dir/repo" ]; then
+# Sources of the locked opam packages, from the dependency mirror
+# (scripts/opam-cache.sh). opam uses them before the original hosts and checks
+# each file against the checksums of the repository. Without the archive, opam
+# downloads the sources itself.
+use_opam_cache() {
+    [ "$mode" != "--unlocked" ] || return 0
+    [ -n "$lock" ] && [ -f "$lock" ] || return 0
+    [ "$BUILD_HAXE_MIRROR" != "none" ] || return 0
+    local name dir archive path
+    name="$(opam_cache_name)"
+    dir="$CACHE_DIR/opam-cache/${name%.tar.gz}"
+    if [ ! -d "$dir/opam-cache" ]; then
+        archive="$CACHE_DIR/downloads/$name"
         mkdir -p "$CACHE_DIR/downloads"
-        local tgz="$CACHE_DIR/downloads/opam-repository-$OPAM_REPO_COMMIT.tar.gz"
-        if [ ! -f "$tgz" ]; then
-            log "downloading opam-repository $OPAM_REPO_COMMIT" >&2
-            curl -fsSL --retry 5 -o "$tgz.part.$$" "https://github.com/ocaml/opam-repository/archive/$OPAM_REPO_COMMIT.tar.gz"
-            mv -f "$tgz.part.$$" "$tgz"
+        if [ ! -f "$archive" ]; then
+            log "downloading $(mirror_url build "$name")"
+            if fetch_to "$(mirror_url build "$name")" "$archive.part.$$"; then
+                mv -f "$archive.part.$$" "$archive"
+            else
+                [ "${BUILD_HAXE_MIRROR_ONLY:-0}" != "1" ] || die "$name is not in the mirror (BUILD_HAXE_MIRROR_ONLY=1)"
+                warn "$name is not in the mirror, opam downloads the sources from their original hosts"
+                return 0
+            fi
         fi
-        log "extracting opam-repository snapshot" >&2
-        mkdir -p "$dir.extract"
-        tar -xzf "$tgz" -C "$dir.extract"
-        mv "$dir.extract/opam-repository-$OPAM_REPO_COMMIT" "$dir"
+        mkdir -p "$dir.extract.$$"
+        tar -xzf "$archive" -C "$dir.extract.$$"
+        [ -d "$dir" ] || mv "$dir.extract.$$" "$dir"
     fi
-    echo "$dir"
+    path="$dir/opam-cache"
+    [ "$os" = "windows" ] && path="/$(cygpath -m "$path")"
+    "$opam" option --global "archive-mirrors=[\"file://$path\"]" >/dev/null
+    log "opam sources from $name"
 }
 
 if [ "$os" != "windows" ]; then
@@ -47,12 +62,14 @@ if [ "$os" != "windows" ]; then
         log "initializing opam root $OPAMROOT"
         "$opam" init --bare --no-setup --disable-sandboxing --bypass-checks pinned "$repo"
     fi
+    use_opam_cache
     if ! "$opam" switch list --short 2>/dev/null | grep -qx build; then
         log "creating switch with OCaml $OCAML_VERSION (this compiles OCaml, it takes a while)"
         "$opam" switch create build "ocaml-base-compiler.$OCAML_VERSION"
     fi
 else
     opam="$(command -v opam)"
+    use_opam_cache
 fi
 
 record_env "$ROOT/build/$HAXE_PROFILE/$target/switch_env.txt"

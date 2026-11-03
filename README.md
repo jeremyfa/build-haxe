@@ -185,7 +185,7 @@ Inputs of the action: `platform` (required), `source` (path of the Haxe sources;
 
 ## neko and haxelib
 
-neko is compiled from pinned sources by `scripts/build-neko.sh`, the same way neko's own CI does it (`cmake -DSTATIC_DEPS=all`, then its `package` target). Its dependencies (Boehm GC, zlib, mbedtls, pcre2, sqlite, MariaDB connector, OpenSSL) are linked statically. They are prefetched into `.cache/downloads` and checked against the sha256 that neko's CMake pins, with mirrors for the hosts that are often down (`archive.mariadb.org`, the OpenSSL GitHub releases). Each profile picks its neko source in `profile.env`:
+neko is compiled from pinned sources by `scripts/build-neko.sh`, the same way neko's own CI does it (`cmake -DSTATIC_DEPS=all`, then its `package` target). Its dependencies (Boehm GC, zlib, mbedtls, pcre2, sqlite, MariaDB connector, OpenSSL) are linked statically. They are prefetched into `.cache/downloads` and checked against the sha256 that neko's CMake pins: from the [dependency mirror](#dependency-mirror) first, then the original hosts, then alternative hosts for those that are often down (`archive.mariadb.org`, the OpenSSL GitHub releases). Each profile picks its neko source in `profile.env`:
 
 Both profiles use neko master (`NEKO_MASTER_COMMIT`): the neko output of Haxe 5 uses primitives that no neko release has yet (2.4.1 is from April 2025), and Haxe 4.3.7 passes exactly the same `macro` and `neko` suites with master as with 2.4.1 (same tests, same assertion counts, on macOS universal, Linux arm64 and Linux x64). The 2.4.1 release stays available: `NEKO_SOURCE=RELEASE`.
 
@@ -207,14 +207,27 @@ HAXE_REPO=https://github.com/me/haxe.git HAXE_BRANCH=my-branch ./build-haxe-mac.
 export NEKO_SOURCE=MYFORK
 export NEKO_MYFORK_REPO=https://github.com/me/neko
 export NEKO_MYFORK_COMMIT=<full commit sha>
-export NEKO_MYFORK_SHA256=<sha256 of https://codeload.github.com/me/neko/tar.gz/<commit>>
-# optional: NEKO_MYFORK_URL (any source archive, file:// works), NEKO_MYFORK_NAME
+export NEKO_MYFORK_SHA256=<sha256 of the tar of the commit, see below>
+# optional: NEKO_MYFORK_URL (another source archive, file:// works; its sha256
+# then goes in NEKO_MYFORK_SHA256), NEKO_MYFORK_NAME
 ./build-haxe-mac.sh
 ```
 
-The sha256 is that of the archive GitHub serves for the commit: `curl -fsSL https://codeload.github.com/me/neko/tar.gz/<commit> | shasum -a 256`. The values of `versions.env` can be overridden the same way (`NEKO_MASTER_COMMIT=...`). The build folder is named after the source and the commit (`myfork-1a2b3c4`), so builds of different sources never mix.
+The sha256 is that of the uncompressed tar of the commit, which `git archive` writes identically on every system: `git -C <clone of the fork> archive --format=tar --prefix=neko-<commit>/ <commit> | shasum -a 256`. The repository can be any git URL, not only GitHub. The archive is taken from the dependency mirror when it is there, otherwise made from the repository, and checked against this sha256 either way. The values of `versions.env` can be overridden the same way (`NEKO_MASTER_COMMIT=...`). The build folder is named after the source and the commit (`myfork-1a2b3c4`), so builds of different sources never mix.
 
 **Patches already merged**: every patch (`patches/neko/` for neko, `patches/` of the profiles for Haxe) is skipped when the sources already contain it, and the log says `<patch>: already applied`. A patch that neither applies nor is present stops the build. This behaves the same with the BSD `patch` of macOS and with GNU `patch` (Linux, Cygwin): both are called with `-f`, without which BSD `patch` takes an unapplied patch for an applied one. The checks of `verify-binary.sh` (decoy modules in `NEKOPATH`, decoy `haxelib` in the `PATH`) then tell whether the merged changes do their job.
+
+## Dependency mirror
+
+Every pinned dependency is also published, byte for byte, as an asset of a release of [jeremyfa/haxe-deps](https://github.com/jeremyfa/haxe-deps): `build-deps` for the build (opam binaries, zlib, pcre2, mbedtls, neko sources and the dependencies neko's CMake pins, the opam-repository snapshot, and an archive of the opam package sources of each profile's lock), `test-deps` for the test suite. Downloads try the mirror first and the original location only if the mirror fails, with a warning; the sha256 is checked either way, so the mirror only adds availability, never trust.
+
+- Archives of git commits (neko, opam-repository) are made with `git archive | gzip -n`. Their pinned sha256 is the one of the uncompressed tar, which is the same on every system, so an archive made from the repository when the mirror is unreachable is checked just as strictly.
+- The opam source archive (`opam-cache-<profile>-<lock hash>.tar.gz`) is made with `opam admin cache` from the packages of the lock and used as opam's `archive-mirrors`. It has no pinned sha256: opam checks every file in it against the checksums of the pinned opam-repository.
+- `BUILD_HAXE_MIRROR=none` skips the mirror, `BUILD_HAXE_MIRROR_ONLY=1` refuses any other source (to check that the mirror is complete), `BUILD_HAXE_MIRROR` can also point to another copy of the releases.
+
+`scripts/deps-manifest.sh` lists every asset. After changing a pinned version, run `scripts/mirror-deps.sh` (or let the `Mirror dependencies` workflow do it, with the `HAXE_DEPS_TOKEN` secret): it publishes what is missing and never replaces an asset. `scripts/mirror-deps.sh --check` only reports missing or wrong assets; the build workflow runs it first and shows the result in its summary.
+
+Not mirrored: the Docker base images (pinned by digest), the packages installed in them, Cygwin and setup-ocaml on Windows, Homebrew host tools.
 
 ## Profiles
 

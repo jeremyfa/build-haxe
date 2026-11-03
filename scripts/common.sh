@@ -152,17 +152,10 @@ load_profile() {
     lower="$(echo "$NEKO_SOURCE" | tr '[:upper:]' '[:lower:]')"
     v="NEKO_${NEKO_SOURCE}_NAME"; NEKO_NAME="${!v:-$lower-${NEKO_COMMIT:0:7}}"
     v="NEKO_${NEKO_SOURCE}_URL"; NEKO_URL="${!v:-}"
-    if [ -z "$NEKO_URL" ]; then
-        case "$NEKO_REPO" in
-            https://github.com/*/*)
-                local slug="${NEKO_REPO#https://github.com/}"
-                slug="${slug%.git}"; slug="${slug%/}"
-                NEKO_URL="https://codeload.github.com/$slug/tar.gz/$NEKO_COMMIT"
-                ;;
-            *) die "neko source $NEKO_SOURCE: $NEKO_REPO is not a GitHub repository, set NEKO_${NEKO_SOURCE}_URL to the source archive" ;;
-        esac
-    fi
-    export HAXE_PROFILE OCAML_VERSION MBEDTLS_SERIES MBEDTLS_VERSION NEKO_COMMIT NEKO_NAME NEKO_REPO
+    # Without NEKO_<S>_URL, the sources are the archive of the commit (mirror,
+    # or made from the repository).
+    NEKO_ARCHIVE_NAME="neko-${NEKO_COMMIT:0:12}.tar.gz"
+    export HAXE_PROFILE OCAML_VERSION MBEDTLS_SERIES MBEDTLS_VERSION NEKO_COMMIT NEKO_NAME NEKO_REPO NEKO_URL NEKO_ARCHIVE_NAME
 }
 
 # Paths. C libraries and neko go to the products cache (build/ or
@@ -308,26 +301,168 @@ replace_file() {
     mv -f "$dst.tmp.$$" "$dst"
 }
 
-# download URL SHA256 -> prints the path of the verified file in .cache/downloads
+# ---- dependency mirror
+# Every pinned dependency is also published as an asset of a release of
+# https://github.com/jeremyfa/haxe-deps (scripts/mirror-deps.sh). Downloads try
+# the mirror first and the original location only as a fallback.
+#   BUILD_HAXE_MIRROR       base URL of the releases, "none" to skip the mirror
+#   BUILD_HAXE_MIRROR_ONLY  1: never fall back to the original location
+: "${BUILD_HAXE_MIRROR:=https://github.com/jeremyfa/haxe-deps/releases/download}"
+: "${BUILD_HAXE_MIRROR_TAG_BUILD:=build-deps}"
+: "${BUILD_HAXE_MIRROR_TAG_TEST:=test-deps}"
+
+mirror_url() {
+    # mirror_url <build|test> <asset name>
+    local tag
+    case "$1" in
+        build) tag="$BUILD_HAXE_MIRROR_TAG_BUILD" ;;
+        test) tag="$BUILD_HAXE_MIRROR_TAG_TEST" ;;
+        *) die "unknown mirror release '$1'" ;;
+    esac
+    echo "$BUILD_HAXE_MIRROR/$tag/$2"
+}
+
+# fetch_to <url> <file>: quiet download with retries, 0 on success.
+fetch_to() {
+    curl -fsSL --retry 3 --retry-delay 2 --max-time 1800 -o "$2" "$1" 2>/dev/null
+}
+
+# download <url> <sha256> [asset name] [build|test]
+# Prints the path of the verified file in $CACHE_DIR/downloads. The asset
+# name defaults to the basename of the URL. A file that fails its checksum
+# is kept as <name>.bad (overwritten by the next failure).
 download() {
-    local url="$1" sha="$2"
+    local url="$1" sha="$2" name="${3:-}" release="${4:-build}"
+    [ -n "$name" ] || name="$(basename "$url")"
     local dir="$CACHE_DIR/downloads"
-    local file="$dir/$(basename "$url")"
+    local file="$dir/$name"
     mkdir -p "$dir"
     if [ -f "$file" ] && [ "$(sha256_of "$file")" = "$sha" ]; then
         echo "$file"
         return
     fi
-    log "downloading $url" >&2
     # The temporary name is unique per process: builds running in parallel
-    # (macOS and Docker) share .cache/downloads.
-    local part="$file.part.$$"
-    curl -fsSL --retry 5 --retry-delay 2 -o "$part" "$url"
-    local got
-    got="$(sha256_of "$part")"
-    if [ "$got" != "$sha" ]; then
-        rm -f "$part"
-        die "checksum mismatch for $url: expected $sha, got $got"
+    # (macOS and Docker) share the downloads folder.
+    local part="$file.part.$$" got source from
+    for source in mirror origin; do
+        if [ "$source" = mirror ]; then
+            [ "$BUILD_HAXE_MIRROR" != "none" ] || continue
+            from="$(mirror_url "$release" "$name")"
+        else
+            if [ "${BUILD_HAXE_MIRROR_ONLY:-0}" = "1" ]; then break; fi
+            from="$url"
+            [ "$BUILD_HAXE_MIRROR" = "none" ] || warn "$name is not in the mirror, downloading it from $url"
+        fi
+        log "downloading $from" >&2
+        if fetch_to "$from" "$part"; then
+            got="$(sha256_of "$part")"
+            if [ "$got" = "$sha" ]; then
+                mv -f "$part" "$file"
+                echo "$file"
+                return
+            fi
+            warn "checksum mismatch for $from: expected $sha, got $got"
+            mv -f "$part" "$file.bad"
+        fi
+    done
+    die "could not download $name (expected sha256 $sha)"
+}
+
+# opam-repository snapshot, extracted once and shared by every opam root
+opam_repo_snapshot() {
+    local dir="$CACHE_DIR/opam-repository/$OPAM_REPO_COMMIT"
+    if [ ! -f "$dir/repo" ]; then
+        mkdir -p "$CACHE_DIR/downloads"
+        local tgz
+        tgz="$(fetch_git_archive "opam-repository-${OPAM_REPO_COMMIT:0:12}.tar.gz" \
+            https://github.com/ocaml/opam-repository "$OPAM_REPO_COMMIT" "$OPAM_REPO_SHA256" \
+            "opam-repository-$OPAM_REPO_COMMIT/")"
+        log "extracting opam-repository snapshot" >&2
+        mkdir -p "$dir.extract"
+        tar -xzf "$tgz" -C "$dir.extract"
+        mv "$dir.extract/opam-repository-$OPAM_REPO_COMMIT" "$dir"
+    fi
+    echo "$dir"
+}
+
+# First 12 characters of the sha256 of the profile's lock file.
+lock_hash() {
+    sha256_of "$PROFILE_LOCK" | cut -c1-12
+}
+# Asset name of the opam source cache of the profile (scripts/opam-cache.sh).
+opam_cache_name() {
+    echo "opam-cache-$HAXE_PROFILE-$(lock_hash).tar.gz"
+}
+# Target name of the machine running the script (mac-arm64, linux-x64...).
+host_target() {
+    case "$HOST_OS-$HOST_ARCH" in
+        mac-arm64) echo mac-arm64 ;;
+        mac-x86_64) echo mac-x86_64 ;;
+        linux-arm64) echo linux-arm64 ;;
+        linux-x86_64) echo linux-x64 ;;
+        windows-x86_64) echo windows-x64 ;;
+        *) die "unsupported host $HOST_OS-$HOST_ARCH" ;;
+    esac
+}
+
+# sha256 of the uncompressed content of a .tar.gz. Archives of git commits
+# are pinned by this value: `git archive` writes the same tar everywhere,
+# while gzip output differs between systems.
+tar_sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        gzip -dc "$1" | sha256sum | awk '{print $1}'
+    else
+        gzip -dc "$1" | shasum -a 256 | awk '{print $1}'
+    fi
+}
+
+# make_git_archive <repo url> <commit> <prefix> <out file>
+# Fetches one commit and writes `git archive --prefix=<prefix> | gzip -n`.
+make_git_archive() {
+    local repo="$1" commit="$2" prefix="$3" out="$4"
+    local work="$CACHE_DIR/git-work/$(echo "$repo" | sed 's|[^A-Za-z0-9._-]|_|g')"
+    mkdir -p "$work"
+    [ -d "$work/.git" ] || git -C "$work" init -q
+    git -C "$work" fetch -q --depth 1 "$repo" "$commit" || die "could not fetch $commit from $repo"
+    [ "$(git -C "$work" rev-parse FETCH_HEAD)" = "$commit" ] || die "$repo did not return commit $commit"
+    git -C "$work" archive --format=tar --prefix="$prefix" FETCH_HEAD | gzip -n -9 > "$out.part.$$"
+    mv -f "$out.part.$$" "$out"
+}
+
+# fetch_git_archive <asset name> <repo url> <commit> <tar sha256> <prefix> [build|test]
+# Prints the path of the archive of a pinned commit, from the cache, the
+# mirror, or made from the repository. Every source is checked against the
+# sha256 of the uncompressed tar (tar_sha256_of).
+fetch_git_archive() {
+    local name="$1" repo="$2" commit="$3" sha="$4" prefix="$5" release="${6:-build}"
+    local dir="$CACHE_DIR/downloads"
+    local file="$dir/$name" part="$dir/$name.part.$$" got
+    mkdir -p "$dir"
+    if [ -f "$file" ] && [ "$(tar_sha256_of "$file")" = "$sha" ]; then
+        echo "$file"
+        return
+    fi
+    if [ "$BUILD_HAXE_MIRROR" != "none" ]; then
+        local from
+        from="$(mirror_url "$release" "$name")"
+        log "downloading $from" >&2
+        if fetch_to "$from" "$part"; then
+            if [ "$(tar_sha256_of "$part")" = "$sha" ]; then
+                mv -f "$part" "$file"
+                echo "$file"
+                return
+            fi
+            warn "content mismatch for $from"
+            mv -f "$part" "$file.bad"
+        fi
+    fi
+    [ "${BUILD_HAXE_MIRROR_ONLY:-0}" != "1" ] || die "$name is not in the mirror (BUILD_HAXE_MIRROR_ONLY=1)"
+    [ "$BUILD_HAXE_MIRROR" = "none" ] || warn "$name is not in the mirror, making it from $repo at $commit"
+    make_git_archive "$repo" "$commit" "$prefix" "$part" >&2
+    got="$(tar_sha256_of "$part")"
+    if [ -n "$sha" ] && [ "$got" != "$sha" ]; then
+        mv -f "$part" "$file.bad"
+        die "$name: the content of $commit has sha256 $got, the pinned one is $sha"
     fi
     mv -f "$part" "$file"
     echo "$file"

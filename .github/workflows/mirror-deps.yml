@@ -1,0 +1,49 @@
+name: Mirror dependencies
+
+# Publishes the pinned dependencies that are missing from the dependency
+# mirror (releases of jeremyfa/haxe-deps), see scripts/mirror-deps.sh.
+# Needs the secret HAXE_DEPS_TOKEN: a fine-grained token with "Contents: read
+# and write" on jeremyfa/haxe-deps only.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'versions.env'
+      - 'test-versions.env'
+      - 'profiles/**'
+      - 'scripts/deps-manifest.sh'
+      - 'scripts/mirror-deps.sh'
+      - 'scripts/opam-cache.sh'
+      - '.github/workflows/mirror-deps.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-deps
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Publish missing dependencies
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.HAXE_DEPS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::The secret HAXE_DEPS_TOKEN is not set (write access to jeremyfa/haxe-deps)."
+            exit 1
+          fi
+          scripts/mirror-deps.sh all
+
+      - name: Check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/mirror-deps.sh --check all

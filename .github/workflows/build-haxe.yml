@@ -43,6 +43,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Every pinned dependency must be in the dependency mirror (jeremyfa/haxe-deps,
+  # see scripts/mirror-deps.sh and .github/workflows/mirror-deps.yml). Builds
+  # still fall back to the original hosts, so this check does not block them
+  # (continue-on-error): it shows what is missing in the run summary.
+  mirror-check:
+    name: Check the dependency mirror
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          status=0
+          scripts/mirror-deps.sh --check all 2>&1 | tee mirror-check.txt || status=$?
+          { echo "### Dependency mirror"; echo '```'; tail -n 40 mirror-check.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
   resolve:
     name: Resolve commits
     runs-on: ubuntu-24.04
