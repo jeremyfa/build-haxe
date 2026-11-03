@@ -127,10 +127,20 @@ jobs:
       - name: Build
         run: ./build-haxe-mac.sh ${{ matrix.arch }}
 
+      # Artifacts lose executable bits and symlinks: neko travels as a tarball.
+      - name: Pack neko
+        run: tar -C build -cf neko-mac-${{ matrix.arch }}.tar neko
+
       - uses: actions/upload-artifact@v4
         with:
           name: stage-${{ matrix.build.profile }}-${{ matrix.build.short }}-mac-${{ matrix.arch }}
           path: build/${{ matrix.build.profile }}/mac-${{ matrix.arch }}/stage
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neko-${{ matrix.build.profile }}-${{ matrix.build.short }}-mac-${{ matrix.arch }}
+          path: neko-mac-${{ matrix.arch }}.tar
           retention-days: 7
 
   mac-universal:
@@ -162,8 +172,16 @@ jobs:
           name: stage-${{ matrix.build.profile }}-${{ matrix.build.short }}-mac-x86_64
           path: build/${{ matrix.build.profile }}/mac-x86_64/stage
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: neko-${{ matrix.build.profile }}-${{ matrix.build.short }}-mac-*
+          path: neko-tars
+          merge-multiple: true
+
       - name: Combine, verify and package
         run: |
+          mkdir -p build
+          for t in neko-tars/*.tar; do tar -C build -xf "$t"; done
           chmod +x build/*/mac-*/stage/haxe
           ./build-haxe-mac.sh universal --from-stages
 
@@ -259,7 +277,7 @@ jobs:
       - name: Clone Haxe, C libraries and OCaml dependencies (with retries)
         run: |
           opam exec -- $env:CYGWIN_BASH -c "./setup-haxe.sh"
-          opam exec -- $env:CYGWIN_BASH -c "scripts/fetch-neko.sh windows-x64 && scripts/build-deps.sh windows-x64"
+          opam exec -- $env:CYGWIN_BASH -c "scripts/build-neko.sh windows-x64 && scripts/build-deps.sh windows-x64"
           for ($i = 1; $i -le 3; $i++) {
             opam exec -- $env:CYGWIN_BASH -c "scripts/setup-switch.sh windows-x64"
             if ($LASTEXITCODE -eq 0) { break }

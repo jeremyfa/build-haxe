@@ -37,7 +37,8 @@ export HAXE_PROFILE
 load_profile
 log "profile: $HAXE_PROFILE"
 
-"$ROOT/scripts/fetch-neko.sh" mac-arm64
+# neko (needed by the opam switch and haxelib), built for every architecture
+"$ROOT/scripts/build-neko.sh" "$target"
 
 build_arch() {
     local a="$1" t="mac-$1"

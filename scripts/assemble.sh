@@ -5,8 +5,10 @@
 #   haxe, haxelib, std/, neko/ (next to the executables on Windows),
 #   commit.txt, build_info.txt, CHANGES.txt, CONTRIB.txt, LICENSE.txt
 #
-# The folder is keyed by commit so a new build never mixes files with an older
-# one. Prints the folder path on the last line.
+# The folder is assembled from scratch in a new directory. An existing one for
+# the same commit is renamed to <short>.old.<date> (never deleted, see
+# clean-haxe.sh), so a new build never mixes files with an older one.
+# Prints the folder path on the last line.
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -18,7 +20,9 @@ os="$(target_os "$target")"
 stage="$(stage_dir "$target")"
 neko="$(neko_dir "$target")"
 short="$(cut -c1-10 "$stage/commit.txt")"
-out="$ROOT/build/$HAXE_PROFILE/$target/$short/haxe"
+base="$ROOT/build/$HAXE_PROFILE/$target/$short"
+work="$base.new.$$"
+out="$work/haxe"
 exe=""
 [ "$os" = "windows" ] && exe=".exe"
 
@@ -46,7 +50,7 @@ else
 fi
 for f in "$neko"/*; do
     case "$(basename "$f")" in
-        include|CMake|README.md|.version|*.lib) continue ;;
+        include|CMake|README.md|.done|*.lib) continue ;;
     esac
     if [ -f "$f" ] && [ ! -L "$f" ]; then
         replace_file "$f" "$nekodest/$(basename "$f")"
@@ -73,6 +77,14 @@ if [ "$os" = "mac" ]; then
         fi
     done
 fi
+
+if [ -e "$base" ]; then
+    old="$base.old.$(date +%Y%m%d%H%M%S)"
+    mv "$base" "$old"
+    log "previous folder moved to $old"
+fi
+mv "$work" "$base"
+out="$base/haxe"
 
 log "assembled $out"
 echo "$out"

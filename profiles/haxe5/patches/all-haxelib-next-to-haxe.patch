@@ -1,0 +1,20 @@
+diff -ru a/src/compiler/haxe.ml b/src/compiler/haxe.ml
+--- a/src/compiler/haxe.ml
++++ b/src/compiler/haxe.ml
+@@ -67,6 +67,16 @@
+ ;;
+ Sys.catch_break true;
+ 
++(* build-haxe: put the folder of the haxe executable first in the PATH of child
++   processes, so that the haxelib next to haxe is used (for -lib, hxcpp,
++   hashlink...) rather than one found in the global PATH. *)
++(try
++	let dir = Filename.dirname (Unix.realpath (Extc._executable_path Sys.argv.(0))) in
++	let sep = if Sys.win32 then ";" else ":" in
++	let path = try Sys.getenv "PATH" with Not_found -> "" in
++	Unix.putenv "PATH" (if path = "" then dir else dir ^ sep ^ path)
++with _ -> ());
++
+ (* Ignore SIGPIPE to prevent process termination when stdin pipe is closed.
+    Sys.sigpipe may not map to the real signal number, so use 13 directly. *)
+ (try Sys.set_signal 13 Sys.Signal_ignore with _ -> ());

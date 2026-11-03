@@ -18,7 +18,7 @@ os="$(target_os "$target")"
 lock="$ROOT/profiles/$HAXE_PROFILE/haxe.opam.locked"
 [ -f "$(deps_prefix "$target")/.done" ] || die "C dependencies missing for $target (run scripts/build-deps.sh $target)"
 [ -f "$HAXE_DIR/haxe.opam" ] || die "haxe/haxe.opam not found (run ./setup-haxe.sh)"
-command -v neko >/dev/null || die "neko not in PATH (run scripts/fetch-neko.sh $target)"
+command -v neko >/dev/null || die "neko not in PATH (run scripts/build-neko.sh $target)"
 
 # opam-repository snapshot, extracted once and shared by every opam root
 opam_repo_snapshot() {

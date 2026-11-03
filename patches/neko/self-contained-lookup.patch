@@ -1,0 +1,82 @@
+diff -ru a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -172,7 +172,8 @@
+ 	endif()
+ endif()
+ 
+-list(APPEND CMAKE_INSTALL_RPATH ${CMAKE_INSTALL_FULL_LIBDIR})
++# build-haxe: no rpath to the global install prefix, libneko is always
++# looked up next to the binaries (RELOCATABLE).
+ 
+ if(UNIX AND NOT APPLE)
+ 	add_definitions(-DABI_ELF)
+diff -ru a/vm/load.c b/vm/load.c
+--- a/vm/load.c
++++ b/vm/load.c
+@@ -28,6 +28,7 @@
+ #include "neko_mod.h"
+ #ifndef NEKO_WINDOWS
+ #	include <dlfcn.h>
++#	include <limits.h>
+ #endif
+ 
+ extern field id_cache;
+@@ -268,23 +269,49 @@
+ 	char *allocated = NULL;
+ #ifdef NEKO_WINDOWS
+ 	char exe_path[MAX_PATH];
+-	if( path == NULL ) {
++	{
++		// Look for modules in the folder of neko.dll first, then in
++		// NEKOPATH. The list is built backwards: the last entry is
++		// searched first.
++		size_t len;
+ #		ifdef NEKO_STANDALONE
+ #			define SELF_DLL NULL
+ #		else
+ #			define SELF_DLL "neko.dll"
+ #		endif
+ 		if( GetModuleFileName(GetModuleHandle(SELF_DLL),exe_path,MAX_PATH) == 0 )
+-			return val_null;
++			strcpy(exe_path,".");
+ 		p = strrchr(exe_path,'\\');
+-		if( p == NULL )
+-			return val_null;
+-		*p = 0;
+-		path = exe_path;
++		if( p != NULL )
++			*p = 0;
++		len = strlen(exe_path) + (path ? strlen(path) : 0) + 2;
++		allocated = (char*)malloc(len);
++		if( path != NULL && *path )
++			snprintf(allocated,len,"%s;%s",path,exe_path);
++		else
++			snprintf(allocated,len,"%s",exe_path);
++		path = allocated;
+ 	}
+ #else
+-	if( path == NULL ) {
+-		allocated = strdup(NEKO_MODULE_PATH ":/usr/local/lib/neko:/usr/lib/neko:/usr/local/bin:/usr/bin");
++	{
++		// Look for modules in the folder of libneko (like neko.dll on
++		// Windows), then in NEKOPATH. No global path, so a neko folder is
++		// self-contained wherever it is installed. The list is built
++		// backwards: the last entry is searched first.
++		Dl_info info;
++		char lib_path[PATH_MAX];
++		size_t len;
++		if( dladdr((void*)init_path,&info) == 0 || info.dli_fname == NULL || realpath(info.dli_fname,lib_path) == NULL )
++			strcpy(lib_path,".");
++		p = strrchr(lib_path,'/');
++		if( p != NULL )
++			*p = 0;
++		len = strlen(lib_path) + (path ? strlen(path) : 0) + 2;
++		allocated = (char*)malloc(len);
++		if( path != NULL && *path )
++			snprintf(allocated,len,"%s:%s",path,lib_path);
++		else
++			snprintf(allocated,len,"%s",lib_path);
+ 		path = allocated;
+ 	}
+ #endif

@@ -64,7 +64,11 @@ load_profile() {
     else
         MBEDTLS_VERSION="$MBEDTLS2_VERSION"; MBEDTLS_URL="$MBEDTLS2_URL"; MBEDTLS_SHA256="$MBEDTLS2_SHA256"
     fi
-    export HAXE_PROFILE OCAML_VERSION MBEDTLS_SERIES MBEDTLS_VERSION
+    local v
+    v="NEKO_${NEKO_SOURCE}_COMMIT"; NEKO_COMMIT="${!v:?unknown NEKO_SOURCE $NEKO_SOURCE}"
+    v="NEKO_${NEKO_SOURCE}_SHA256"; NEKO_SHA256="${!v}"
+    v="NEKO_${NEKO_SOURCE}_NAME"; NEKO_NAME="${!v}"
+    export HAXE_PROFILE OCAML_VERSION MBEDTLS_SERIES MBEDTLS_VERSION NEKO_COMMIT NEKO_NAME
 }
 
 # Paths, all inside the project directory
@@ -83,16 +87,9 @@ opam_root() {
 stage_dir() { echo "$ROOT/build/$HAXE_PROFILE/$1/stage"; }
 dune_build_dir() { echo "_build-$1"; }
 
-neko_asset() {
-    case "$1" in
-        mac-*) echo osx-universal ;;
-        linux-x64) echo linux64 ;;
-        linux-arm64) echo linux-arm64 ;;
-        windows-x64) echo win64 ;;
-        *) die "no neko asset for $1" ;;
-    esac
-}
-neko_dir() { echo "$ROOT/.cache/neko/$(neko_asset "$1")"; }
+# neko built from source (scripts/build-neko.sh), one folder per neko source
+# and target, with the flat layout of the official neko archives.
+neko_dir() { echo "$ROOT/build/neko/$NEKO_NAME/$1"; }
 
 opam_bin() {
     local os arch
@@ -149,7 +146,8 @@ download() {
 
 # Host tools allowed in the build PATH, exposed one by one so that the whole
 # Homebrew bin directory never ends up in the PATH.
-HOST_TOOLS="cmake ninja pkg-config pkgconf"
+# autotools are needed by some of neko's static dependencies.
+HOST_TOOLS="cmake ninja pkg-config pkgconf autoreconf autoconf autoheader autom4te autoscan autoupdate ifnames aclocal automake glibtool glibtoolize"
 
 prepare_hostbin() {
     local dir="$ROOT/.cache/hostbin"
@@ -162,6 +160,9 @@ prepare_hostbin() {
         esac
         ln -sf "$path" "$dir/$tool"
     done
+    # Homebrew names GNU libtool glibtool / glibtoolize
+    if [ -e "$dir/glibtoolize" ]; then ln -sf glibtoolize "$dir/libtoolize"; fi
+    if [ -e "$dir/glibtool" ]; then ln -sf glibtool "$dir/libtool"; fi
     echo "$dir"
 }
 

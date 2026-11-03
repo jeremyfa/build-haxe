@@ -8,7 +8,8 @@
 # with a mingw switch, from `opam exec -- bash ./build-haxe-windows.sh`.
 #
 # zlib, pcre2 and mbedtls are built from source with the mingw gcc and linked
-# statically: haxe.exe only depends on system DLLs.
+# statically: haxe.exe only depends on system DLLs. neko is built from source
+# with MSVC (CMake and Visual Studio 2022 must be available).
 #
 # Environment: HAXE_REPO, HAXE_BRANCH, HAXE_COMMIT, HAXE_PROFILE, SKIP_SETUP=1.
 
@@ -28,7 +29,7 @@ export HAXE_PROFILE
 load_profile
 log "profile: $HAXE_PROFILE"
 
-"$ROOT/scripts/fetch-neko.sh" "$target"
+"$ROOT/scripts/build-neko.sh" "$target"
 "$ROOT/scripts/build-deps.sh" "$target"
 "$ROOT/scripts/setup-switch.sh" "$target"
 "$ROOT/scripts/build-core.sh" "$target"

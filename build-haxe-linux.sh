@@ -4,9 +4,9 @@
 #
 # Runs in Docker on every host (Docker Desktop on macOS, native Docker on
 # Linux and GitHub Actions) so the result is the same everywhere:
+#   0. Debian 11 (glibc 2.31): neko built from source, static dependencies
 #   1. Alpine (musl): C libraries, opam switch, static haxe binary
-#   2. Debian 11 (glibc 2.31): haxelib linked to the official neko release,
-#      assembly, checks, archive
+#   2. Debian 11: haxelib linked to that neko, assembly, checks, archive
 #   3. Smoke tests of the result in bare alpine, debian and ubuntu images
 #
 # Environment: HAXE_REPO, HAXE_BRANCH, HAXE_COMMIT, HAXE_PROFILE,
@@ -14,14 +14,14 @@
 # BUILD_HAXE_OPAM_CACHE=<host dir> (bind a host folder for the opam roots
 # instead of a named Docker volume, used on CI to cache them).
 #
-# Internal: --stage core|haxelib runs one stage inside the container.
+# Internal: --stage neko|core|haxelib runs one stage inside the container.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/scripts/common.sh"
 
 arch_arg="${1:-}"
 stage_arg=""
-if [ "${2:-}" = "--stage" ]; then stage_arg="${3:?--stage needs core or haxelib}"; fi
+if [ "${2:-}" = "--stage" ]; then stage_arg="${3:?--stage needs neko, core or haxelib}"; fi
 
 if [ -z "$arch_arg" ]; then
     case "$HOST_ARCH" in
@@ -41,6 +41,9 @@ if [ -n "$stage_arg" ]; then
     in_container || die "--stage is meant to run inside the build containers"
     load_profile
     case "$stage_arg" in
+        neko)
+            "$ROOT/scripts/build-neko.sh" "$target"
+            ;;
         core)
             "$ROOT/scripts/check-host.sh" "$target"
             "$ROOT/scripts/build-deps.sh" "$target"
@@ -74,7 +77,6 @@ log "profile: $HAXE_PROFILE, target: $target"
 
 # Downloads happen on the host, into the bind-mounted .cache
 "$ROOT/scripts/fetch-opam.sh" "$target"
-"$ROOT/scripts/fetch-neko.sh" "$target"
 
 # On macOS: start Docker Desktop if it isn't running, and stop it on exit.
 # Only manages what we started. Same logic as loreline-writer/export-linux.sh.
@@ -141,14 +143,12 @@ if [ "$HOST_OS" = "mac" ] && [ "$docker_platform" = "linux/amd64" ]; then
     [ "$got" = "x86_64" ] || die "Docker cannot run linux/amd64 containers (got '$got'). Enable 'Use Rosetta for x86_64/amd64 emulation' in Docker Desktop settings."
 fi
 
-glibc_image_var="GLIBC_IMAGE_$arch_arg"; glibc_image="${!glibc_image_var}"
-glibc_snapshot_var="GLIBC_SNAPSHOT_$arch_arg"; glibc_snapshot="${!glibc_snapshot_var}"
 alpine_tag="build-haxe-alpine:$arch_arg"
 glibc_tag="build-haxe-glibc:$arch_arg"
 log "building images"
 docker build --platform "$docker_platform" --build-arg ALPINE_IMAGE="$ALPINE_IMAGE" \
     -t "$alpine_tag" -f "$ROOT/docker/linux.Dockerfile" "$ROOT/docker"
-docker build --platform "$docker_platform" --build-arg BASE_IMAGE="$glibc_image" --build-arg DEBIAN_SNAPSHOT="$glibc_snapshot" \
+docker build --platform "$docker_platform" --build-arg BASE_IMAGE="$GLIBC_IMAGE" --build-arg DEBIAN_SNAPSHOT="$GLIBC_SNAPSHOT" \
     -t "$glibc_tag" -f "$ROOT/docker/linux-glibc.Dockerfile" "$ROOT/docker"
 
 # opam roots: a named volume per arch (bind mounts from macOS are slow for
@@ -163,11 +163,15 @@ fi
 run_env=(-e HAXE_PROFILE="$HAXE_PROFILE" -e BUILD_HAXE_OPAMROOT_BASE=/opamroot -e JOBS="$JOBS"
     -e CERAMIC_LAYOUT="${CERAMIC_LAYOUT:-0}")
 
+log "stage 0: neko $NEKO_NAME ($GLIBC_IMAGE, $docker_platform)"
+docker run --rm --platform "$docker_platform" -v "$ROOT:/workspace" \
+    "${run_env[@]}" -w /workspace "$glibc_tag" ./build-haxe-linux.sh "$arch_arg" --stage neko
+
 log "stage 1: static haxe (Alpine, $docker_platform)"
 docker run --rm --platform "$docker_platform" -v "$ROOT:/workspace" "${opam_mount[@]}" \
     "${run_env[@]}" -e BUILD_HAXE_COPY_SOURCES=1 -w /workspace "$alpine_tag" ./build-haxe-linux.sh "$arch_arg" --stage core
 
-log "stage 2: haxelib, assembly and checks ($glibc_image, $docker_platform)"
+log "stage 2: haxelib, assembly and checks ($GLIBC_IMAGE, $docker_platform)"
 docker run --rm --platform "$docker_platform" -v "$ROOT:/workspace" \
     "${run_env[@]}" -w /workspace "$glibc_tag" ./build-haxe-linux.sh "$arch_arg" --stage haxelib
 
@@ -175,17 +179,15 @@ short="$(cut -c1-10 "$(stage_dir "$target")/commit.txt")"
 out_rel="build/$HAXE_PROFILE/$target/$short/haxe"
 
 log "stage 3: smoke tests in bare images"
-# haxe is static: it must run everywhere. haxelib needs the glibc of its build
-# image or newer.
-if [ "$arch_arg" = "x64" ]; then
-    haxelib_images="$glibc_image ubuntu:20.04 ubuntu:22.04 ubuntu:24.04"
-else
-    haxelib_images="$glibc_image ubuntu:24.04 debian:bookworm-slim"
-fi
-for image in "$ALPINE_IMAGE" "$GLIBC_IMAGE_x64" ubuntu:20.04 ubuntu:24.04 $haxelib_images; do
+# haxe is static: it must run everywhere. haxelib and neko need glibc 2.31 or
+# newer (the glibc of the build image). haxelib is checked with commands that
+# load the neko modules (setup and list), not only its version.
+haxe_images="$ALPINE_IMAGE $GLIBC_IMAGE ubuntu:20.04 ubuntu:24.04"
+haxelib_images="$GLIBC_IMAGE ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:bookworm-slim"
+for image in $haxe_images $haxelib_images; do
     docker pull -q --platform "$docker_platform" "$image" >/dev/null
 done
-for image in "$ALPINE_IMAGE" "$GLIBC_IMAGE_x64" ubuntu:20.04 ubuntu:24.04; do
+for image in $haxe_images; do
     v="$(docker run --rm --platform "$docker_platform" -v "$ROOT/$out_rel:/haxe:ro" "$image" /haxe/haxe --version 2>&1 || true)"
     case "$v" in
         [0-9]*) log "  haxe --version in $image: $v" ;;
@@ -193,9 +195,10 @@ for image in "$ALPINE_IMAGE" "$GLIBC_IMAGE_x64" ubuntu:20.04 ubuntu:24.04; do
     esac
 done
 for image in $haxelib_images; do
-    v="$(docker run --rm --platform "$docker_platform" -v "$ROOT/$out_rel:/haxe:ro" -e HOME=/tmp "$image" /haxe/haxelib version 2>&1 || true)"
+    v="$(docker run --rm --platform "$docker_platform" -v "$ROOT/$out_rel:/haxe:ro" -e HOME=/tmp "$image" \
+        sh -c 'mkdir -p /tmp/lib && /haxe/haxelib setup /tmp/lib >/dev/null && /haxe/haxelib list >/dev/null && /haxe/haxelib version && /haxe/neko/neko -version' 2>&1 || true)"
     case "$v" in
-        [0-9]*) log "  haxelib version in $image: $v" ;;
+        [0-9]*) log "  haxelib and neko in $image: $(echo $v)" ;;
         *) die "haxelib does not run in $image: $v" ;;
     esac
 done

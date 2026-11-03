@@ -28,27 +28,6 @@ command -v dune >/dev/null || die "dune not found: run scripts/setup-switch.sh $
 mkdir -p "$stage"
 record_env "$ROOT/build/$HAXE_PROFILE/$target/build_env.txt"
 
-# ---- profile patches, reverted on exit so the clone stays clean
-applied=()
-revert_patches() {
-    local p
-    for p in "${applied[@]+"${applied[@]}"}"; do
-        git -C "$HAXE_DIR" apply -R "$p" || warn "could not revert $p"
-    done
-}
-trap revert_patches EXIT
-for p in "$ROOT/profiles/$HAXE_PROFILE/patches/"*.patch; do
-    [ -f "$p" ] || continue
-    case "$(basename "$p")" in
-        all-*|"$os"-*) ;;
-        *) continue ;;
-    esac
-    log "applying $(basename "$p")"
-    git -C "$HAXE_DIR" apply --check "$p"
-    git -C "$HAXE_DIR" apply "$p"
-    applied+=("$p")
-done
-
 # ---- link flags for the C libraries
 case "$os" in
     mac)
@@ -80,6 +59,33 @@ if [ "${BUILD_HAXE_COPY_SOURCES:-0}" = "1" ]; then
     mkdir -p "$src_root"
     log "copying sources to $src_root"
     tar -C "$HAXE_DIR" --exclude='./_build*' -cf - . | tar -C "$src_root" -xf -
+    # Another build may have its patches applied in the shared clone: start
+    # the copy from the committed sources.
+    git -C "$src_root" checkout -- .
+fi
+
+# ---- profile patches. Applied to the copy, or to the clone and reverted on
+# exit so that it stays clean.
+applied=()
+revert_patches() {
+    local p
+    for p in "${applied[@]+"${applied[@]}"}"; do
+        git -C "$src_root" apply -R "$p" || warn "could not revert $p"
+    done
+}
+for p in "$ROOT/profiles/$HAXE_PROFILE/patches/"*.patch; do
+    [ -f "$p" ] || continue
+    case "$(basename "$p")" in
+        all-*|"$os"-*) ;;
+        *) continue ;;
+    esac
+    log "applying $(basename "$p")"
+    git -C "$src_root" apply --check "$p"
+    git -C "$src_root" apply "$p"
+    applied+=("$p")
+done
+if [ "$src_root" = "$HAXE_DIR" ]; then
+    trap revert_patches EXIT
 fi
 
 cd "$src_root"
@@ -128,7 +134,7 @@ haxe_commit > "$stage/commit.txt"
     echo "zlib: $ZLIB_VERSION"
     echo "pcre2: $PCRE2_VERSION"
     echo "mbedtls: $MBEDTLS_VERSION"
-    echo "neko: $NEKO_VERSION"
+    echo "neko: $NEKO_NAME ($NEKO_COMMIT), built from source"
     echo "opam-repository: $OPAM_REPO_COMMIT"
     [ -n "${MACOSX_DEPLOYMENT_TARGET:-}" ] && echo "macOS deployment target: $MACOSX_DEPLOYMENT_TARGET"
     echo "Build host: $HOST_OS-$HOST_ARCH"

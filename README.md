@@ -13,26 +13,34 @@ haxe/
   haxe            the compiler
   haxelib
   std/            standard library (found next to the executable, no HAXE_STD_PATH needed)
-  neko/           neko runtime used by haxelib (next to the executables on Windows)
+  neko/           neko, built from source (next to the executables on Windows)
   commit.txt      Haxe commit
   build_info.txt  versions of everything that went into the build
 ```
 
 ## What makes the binaries portable
 
-- **macOS**: universal (arm64 + x86_64). `haxe` only links `libSystem` and the `Security` / `CoreFoundation` frameworks. zlib, pcre2 and mbedtls are compiled from source and linked statically, never taken from Homebrew. Minimum macOS: 11.0 (arm64), 10.13 (x86_64). `haxelib` and neko need macOS 11.0. Ad hoc signature by default.
-- **Linux**: `haxe` is a fully static musl binary (built on Alpine): it runs on any distribution, including Alpine. `haxelib` uses the official neko release, which needs glibc: 2.31 or newer on x64 (Debian 11, Ubuntu 20.04 and later), 2.35 or newer on arm64 (Ubuntu 22.04, Debian 12 and later).
-- **Windows**: `haxe.exe` only depends on system DLLs (C libraries and the mingw runtime are linked statically).
+- **macOS**: universal (arm64 + x86_64). `haxe`, `haxelib` and neko only link `libSystem` and system frameworks: every C library is compiled from source and linked statically, never taken from Homebrew. Minimum macOS: 11.0 (arm64), 10.13 (x86_64), for all binaries. Ad hoc signature by default.
+- **Linux**: `haxe` is a fully static musl binary (built on Alpine): it runs on any distribution, including Alpine. neko and `haxelib` are built on Debian 11 and only need glibc 2.31 or newer (Debian 11, Ubuntu 20.04 and later), on x64 and arm64.
+- **Windows**: `haxe.exe` only depends on system DLLs (C libraries and the mingw runtime are linked statically). neko is built with MSVC, like the official releases (the Windows build is only run on GitHub Actions).
 
-`scripts/verify-binary.sh` checks all of this after every build (linked libraries, minimum OS versions, architectures, signatures, and that `haxe --version` and `haxelib version` run with an empty environment). The Linux build also runs both in bare `alpine`, `debian` and `ubuntu` images.
+### Self-contained
+
+The `haxe/` folder works wherever it is copied and never uses files installed elsewhere on the machine:
+
+- `haxe` finds `std/` next to itself, and runs the `haxelib` next to itself: it puts its own folder first in the `PATH` of the processes it starts (`profiles/*/patches/all-haxelib-next-to-haxe.patch`), so `-lib`, hxcpp or hashlink never pick up another haxelib.
+- `haxelib` finds libneko in `neko/` through a relative rpath (`@executable_path/neko`, `$ORIGIN/neko`).
+- neko looks for its modules (`.ndll`) next to libneko, then in `NEKOPATH`, and never in global folders such as `/usr/local/lib/neko` (`patches/neko/self-contained-lookup.patch`; on Windows it already looked next to `neko.dll`, the patch keeps that folder first when `NEKOPATH` is set). No binary has an absolute rpath.
+
+`scripts/verify-binary.sh` checks all of this after every build (linked libraries, minimum OS versions, architectures, signatures, and that `haxe --version` and `haxelib setup`, `list` and `version` run with an empty environment). Decoys prove the lookups: haxelib must ignore corrupted modules put in `NEKOPATH`, and `haxe -lib` must ignore a fake `haxelib` put first in the `PATH`. The Linux build also runs the tools in bare `alpine`, `debian` and `ubuntu` images.
 
 ## Building from Source
 
 ### Requirements
 
-- macOS builds: Xcode Command Line Tools, [Homebrew](https://brew.sh) for host tools only (`brew bundle --file=Brewfile`: cmake, ninja, pkgconf), and Rosetta for x86_64 (`softwareupdate --install-rosetta`).
+- macOS builds: Xcode Command Line Tools, [Homebrew](https://brew.sh) for host tools only (`brew bundle --file=Brewfile`: cmake, ninja, pkgconf, autoconf, automake, libtool), and Rosetta for x86_64 (`softwareupdate --install-rosetta`).
 - Linux builds: Docker. On macOS, Docker Desktop is started automatically if needed and stopped at the end. Building x64 from an Apple Silicon Mac needs "Use Rosetta for x86_64/amd64 emulation" enabled in Docker Desktop.
-- Windows builds: opam 2.2+ with a mingw OCaml switch (this is what GitHub Actions uses through `ocaml/setup-ocaml`).
+- Windows builds: opam 2.2+ with a mingw OCaml switch (this is what GitHub Actions uses through `ocaml/setup-ocaml`), plus CMake and Visual Studio 2022 for neko.
 
 ### macOS
 
@@ -85,6 +93,15 @@ HAXE_REPO=https://github.com/jeremyfa/haxe.git HAXE_BRANCH=new_csharp ./build-ha
 
 The clone lives in `haxe/`. To build from another repository, run `./clean-haxe.sh` first (the scripts refuse to switch the origin of an existing clone).
 
+## neko and haxelib
+
+neko is compiled from pinned sources by `scripts/build-neko.sh`, the same way neko's own CI does it (`cmake -DSTATIC_DEPS=all`, then its `package` target). Its dependencies (Boehm GC, zlib, mbedtls, pcre2, sqlite, MariaDB connector, OpenSSL) are downloaded by neko's CMake, checked against the sha256 it pins, and linked statically. Each profile picks its neko source in `profile.env`:
+
+- `haxe5`: neko master (`NEKO_MASTER_COMMIT`). The neko output of Haxe 5 uses primitives that no neko release has yet (2.4.1 is from April 2025).
+- `haxe43`: the 2.4.1 release (`NEKO_RELEASE_COMMIT`).
+
+haxelib comes from the `extra/haxelib_src` submodule of the Haxe repository, so its version follows the Haxe commit. The build compiles its client to neko bytecode with the freshly built `haxe` (`run.n`), then `nekotools boot` turns it into a small native launcher linked to libneko, with an rpath to the `neko/` folder next to it. haxelib is therefore exactly as portable as neko.
+
 ## Profiles
 
 The two maintained Haxe branches need different OCaml dependencies. A profile is a folder in `profiles/`:
@@ -101,7 +118,7 @@ HAXE_BRANCH=4.3_bugfix ./setup-haxe.sh && HAXE_PROFILE=haxe43 scripts/update-loc
 
 Each OCaml version gets its own opam root (`.cache/opam/<profile>-<target>-ocaml<version>`), so changing it never reuses an old one. `profiles/<profile>/patches/` can hold patches applied to the Haxe sources during the build and reverted afterwards. The file name prefix selects the platform (`all-`, `mac-`, `linux-`, `windows-`).
 
-All other versions (opam, zlib, pcre2, mbedtls, neko, container images) and their checksums are in `versions.env`.
+All other versions (opam, zlib, pcre2, mbedtls, neko sources, container images) and their checksums are in `versions.env`.
 
 ## Running tests
 
@@ -110,14 +127,14 @@ All other versions (opam, zlib, pcre2, mbedtls, neko, container images) and thei
 ./test-haxe.sh linux-arm64 macro          # runs in docker/linux-test.Dockerfile
 ```
 
-Default suites: `macro` for `haxe5`, `macro,neko` for `haxe43`. Tests run on a fresh copy of the clone in `build/test-work/` (inside the container for Linux). A few macro tests call node, python3 or Java: the Linux test image has them, on macOS they must be installed. Other RunCi targets (`js`, `hl`, `cpp`, `jvm`, `python`, `php`, `lua`) can be listed too, but need their own toolchain installed.
+Default suites: `macro,neko` for both profiles. Tests run on a fresh copy of the clone in `build/test-work/` (inside the container for Linux). A few macro tests call node, python3 or Java: the Linux test image has them, on macOS they must be installed. Other RunCi targets (`js`, `hl`, `cpp`, `jvm`, `python`, `php`, `lua`) can be listed too, but need their own toolchain installed.
 
 ## Known limits
 
 - x86_64 macOS builds run the toolchain under Rosetta. Apple announced that its developer tools may stop being universal from version 27, which would break this. `scripts/check-host.sh` warns when the SDK reaches 27.
-- `haxelib` on Linux needs glibc (the official neko release is not built for musl). `haxe` itself runs everywhere.
+- neko and `haxelib` on Linux need glibc: neko loads its modules (`.ndll`) with `dlopen`, which a static binary cannot do. `haxe` itself runs everywhere.
 - Windows binaries are built on GitHub Actions or on a Windows machine. Cross-compiling them from a Mac is not supported.
-- The neko target of Haxe 5 (`development`) uses neko primitives added in 2026 that no neko release has yet (2.4.1 is from April 2025). The archives ship neko 2.4.1, which is enough for haxelib, and the `haxe5` profile only runs the `macro` tests by default. Running Haxe 5 neko output needs a neko built from its master branch (the official Haxe CI uses the nightlies of build.haxe.org).
+- The neko build leaves out the modules that depend on system libraries: `ui.ndll` (GTK) and the Apache modules `mod_neko2` / `mod_tora2`.
 
 ## Cleaning up
 

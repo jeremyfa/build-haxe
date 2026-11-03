@@ -14,25 +14,25 @@ La première version de ce document s'appuyait sur des clones locaux qui ne corr
 | development dépend de `conf-libpcre2-8` | Il dépend du paquet opam `pcre2` (bindings OCaml), qui interroge `pkg-config libpcre2-8` à l'installation. `libs/pcre2` n'existe plus | `PKG_CONFIG_LIBDIR` pointe uniquement sur `build/deps/...` ; les deps C sont construites avant le switch |
 | 4.3 : `HAXELIB_LDFLAGS` | La variable s'appelle `HAXELIB_LFLAGS` sur 4.3, `HAXELIB_LDFLAGS` sur development | haxelib est construit par `scripts/build-haxelib.sh`, sans `make haxelib` |
 | 4.3 : frameworks ajoutés par le Makefile | Passer `LIB_PARAMS` en ligne de commande écrase le `+=` des frameworks | Les frameworks sont ajoutés par `build-core.sh` pour haxe43 |
-| haxelib Linux lié au neko officiel depuis Alpine | Le neko officiel est glibc, impossible à lier depuis musl | haxelib est construit dans une image Debian 11 (glibc 2.31) ; haxe reste statique musl |
-| Alpine fournit neko pour `conf-neko` | Pas de paquet `neko` dans Alpine 3.22 | `gcompat` dans l'image Alpine : le neko officiel répond à `neko -version`, seul test de `conf-neko` |
+| haxelib Linux lié au neko depuis Alpine | neko est lié à glibc (il charge ses modules avec `dlopen`), impossible à lier depuis musl | neko et haxelib sont construits dans une image Debian 11 (glibc 2.31) ; haxe reste statique musl |
+| Alpine fournit neko pour `conf-neko` | Pas de paquet `neko` dans Alpine 3.22 | `gcompat` dans l'image Alpine : notre neko (glibc) répond à `neko -version`, seul test de `conf-neko` |
 | Debian 11 via les dépôts normaux | Fin du LTS en août 2026, des paquets disparaissent des miroirs | Dépôts figés sur snapshot.debian.org (`DEBIAN_SNAPSHOT`) |
 | haxelib : un seul sous-module | haxelib a ses propres sous-modules (hx3compat, hx4compat, crypto, record-macros) | `git submodule update --init --recursive` |
 | Windows 4.3 : pcre2 statique | `pcre2.h` déclare les symboles `dllimport` sans `PCRE2_STATIC` | Patch `profiles/haxe43/patches/windows-pcre2-static.patch` |
 | Build via `make haxe` | Un même clone sert à mac arm64, mac x86_64 et Linux | `build-core.sh` appelle `dune` comme la cible `haxe` de chaque Makefile, avec un `DUNE_BUILD_DIR` par cible |
 | Sortie `build/<profil>/<cible>/haxe/` | Les scripts ne suppriment jamais de dossier | Sortie par commit : `build/<profil>/<cible>/<commit>/haxe/` |
 | `build-haxe-windows.ps1` | opam sous Windows passe de toute façon par Cygwin | `build-haxe-windows.sh` lancé dans le bash Cygwin de setup-ocaml, avec le même `common.sh` |
-| libneko mac minos 11.0 | Le neko officiel exige macOS 11.0 sur les deux arches | haxelib : minos 11.0 ; haxe x86_64 garde 10.13 |
 | Lock opam unique | Les paquets virtuels de plateforme (`host-arch-*`, `host-system-*`) diffèrent selon l'hôte | `update-locks.sh` les retire ; sous Windows, les épinglages du compilateur sont retirés (il vient de setup-ocaml) |
-| Image glibc unique Debian 11 pour haxelib | Le neko officiel exige glibc 2.29 (x64) mais 2.34 (arm64) | x64 : Debian 11 (glibc 2.31) ; arm64 : Ubuntu 22.04 (glibc 2.35). Variables `GLIBC_IMAGE_*` dans `versions.env` |
 | Clone bind-monté dans Docker | Le système de fichiers macOS est insensible à la casse, dune sous Linux échoue parfois | Le build Linux compile depuis une copie des sources dans le conteneur (`BUILD_HAXE_COPY_SOURCES=1`) |
 | `run.n` de haxelib | Fichier suivi par git dans le sous-module, réécrit par chaque build | Restauré après le build de haxelib et avant tout changement de commit |
 | Tests dans le clone | Certains tests écrivent dans l'arbre et ne supportent pas d'être relancés (Issue12873) | `test-haxe.sh` travaille sur une copie des fichiers suivis par git |
-| Tests neko de Haxe 5 avec neko 2.4.1 | La std de development utilise des primitives neko de 2026 (`std@lock_create`...), absentes de toute release | Profil haxe5 : tests par défaut `macro`. Le CI officiel utilise un neko nightly (build.haxe.org) ; choix laissé ouvert, voir README |
 | Quelques tests macro | Des tests appellent node (`resolution`), python3 (`TestUnicode`) ou Java (`Issue11737` sur 4.3) | Image de test `docker/linux-test.Dockerfile` avec nodejs, python3 et un JDK |
 | haxe43 sur OCaml 5.3.0 | luv 0.5.13 ne compile pas avec ctypes >= 0.22 et un clang récent ; ctypes 0.21.1 exige OCaml < 5.2 | Profil haxe43 : OCaml 5.1.1 et `OPAM_PINS="ctypes.0.21.1"`, comme le CI officiel de 4.3 |
 | mbedtls 2.28 et CMake 4 | `cmake_minimum_required` trop ancien | `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` |
 | Racine opam par profil et cible | Changer de version d'OCaml demanderait de supprimer la racine (et une racine opam n'est pas déplaçable) | Racine par profil, cible et version d'OCaml |
+| neko : release officielle téléchargée | La std de development utilise des primitives neko de 2026 (`std@lock_create`...) absentes de 2.4.1 ; le neko arm64 officiel exige glibc 2.34 et macOS 11.0 | neko compilé depuis les sources (`scripts/build-neko.sh`, `STATIC_DEPS=all` comme le CI de neko) : master épinglé pour haxe5, tag 2.4.1 pour haxe43. Linux : Debian 11 sur les deux arches (glibc 2.29 requis au plus) ; mac : minos 10.13 en x86_64. Modules `ui`, `mod_neko2`, `mod_tora2` exclus |
+| Sortie assemblée réutilisée | Un nouvel assemblage dans le même dossier laissait des fichiers de l'ancien | Assemblage dans un dossier neuf ; l'ancien est renommé `<commit>.old.<date>` |
+| Autonomie du dossier `haxe/` (objectif) | neko gardait un rpath `/usr/local/lib` et cherchait ses `.ndll` dans `/usr/local/lib/neko`, `/usr/lib/neko`... ; `haxe -lib` lançait le premier `haxelib` du `PATH` | `patches/neko/self-contained-lookup.patch` (modules à côté de libneko, puis `NEKOPATH`, aucun chemin global ; plus de rpath global) et `profiles/*/patches/all-haxelib-next-to-haxe.patch` (le dossier de `haxe` en tête du `PATH` de ses sous-processus). Vérifié par des leurres dans `verify-binary.sh` |
 | Copie d'exécutables avec `cp` | Écraser un exécutable sur place (même inode) fait tuer le binaire par macOS au lancement suivant (signature en cache) | `replace_file` : copie temporaire puis `mv`, pour opam, haxe, haxelib et neko |
 | Passer d'une branche à l'autre dans le même clone | Le build 4.3 laisse `lib.sexp` et `src/compiler/version.ml` (ignorés par git), qui entrent en conflit avec les règles dune de development | `build-core.sh` les supprime avant un build haxe5 |
 
@@ -177,11 +177,11 @@ build-haxe/
     haxe43/haxe.opam.locked
     haxe43/patches/windows-pcre2-static.patch
   scripts/
+    build-neko.sh             # neko depuis les sources, dépendances statiques -> build/neko/<source>/<cible>/
     common.sh                 # détection hôte, profils, chemins, téléchargement vérifié, environnement isolé
     check-host.sh
     detect-profile.sh
     fetch-opam.sh
-    fetch-neko.sh
     build-deps.sh             # zlib, pcre2, mbedtls statiques -> build/deps/<profil>/<cible>/
     setup-switch.sh           # OPAMROOT local, snapshot opam-repository, switch, deps verrouillées
     update-locks.sh

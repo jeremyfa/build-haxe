@@ -31,9 +31,7 @@ if [ "$os" = "linux" ] && ! in_container; then
         linux-arm64) platform=linux/arm64; arch_arg=arm64 ;;
     esac
     docker info >/dev/null 2>&1 || die "Docker is not running"
-    glibc_image_var="GLIBC_IMAGE_$arch_arg"; glibc_image="${!glibc_image_var}"
-    glibc_snapshot_var="GLIBC_SNAPSHOT_$arch_arg"; glibc_snapshot="${!glibc_snapshot_var}"
-    docker build -q --platform "$platform" --build-arg BASE_IMAGE="$glibc_image" --build-arg DEBIAN_SNAPSHOT="$glibc_snapshot" \
+    docker build -q --platform "$platform" --build-arg BASE_IMAGE="$GLIBC_IMAGE" --build-arg DEBIAN_SNAPSHOT="$GLIBC_SNAPSHOT" \
         -t "build-haxe-glibc:$arch_arg" -f "$ROOT/docker/linux-glibc.Dockerfile" "$ROOT/docker" >/dev/null
     docker build -q --platform "$platform" --build-arg GLIBC_TAG="build-haxe-glibc:$arch_arg" \
         -t "build-haxe-test:$arch_arg" -f "$ROOT/docker/linux-test.Dockerfile" "$ROOT/docker" >/dev/null

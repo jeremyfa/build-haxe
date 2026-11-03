@@ -2,3 +2,6 @@
 brew "cmake"
 brew "ninja"
 brew "pkgconf"
+brew "autoconf"
+brew "automake"
+brew "libtool"

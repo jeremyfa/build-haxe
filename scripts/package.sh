@@ -27,7 +27,9 @@ if [ "$layout" = "--ceramic-layout" ]; then
     [ "$os" != "windows" ] || die "--ceramic-layout is only needed for mac and linux"
     name="$name-ceramic"
     src="$base-ceramic"
-    [ ! -e "$src" ] || die "$src already exists, remove it first"
+    if [ -e "$src" ]; then
+        mv "$src" "$src.old.$(date +%Y%m%d%H%M%S)"
+    fi
     mkdir -p "$src"
     cp -R -P "$base/haxe" "$src/haxe"
     mv "$src/haxe/neko" "$src/neko"

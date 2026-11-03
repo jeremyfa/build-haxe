@@ -23,7 +23,7 @@ exe=""
 
 haxe_bin="${HAXE_FOR_HAXELIB:-$stage/haxe$exe}"
 [ -x "$haxe_bin" ] || die "$haxe_bin not found (run scripts/build-core.sh $target)"
-[ -x "$neko/nekotools$exe" ] || die "neko missing (run scripts/fetch-neko.sh $target)"
+[ -x "$neko/nekotools$exe" ] || die "neko missing (run scripts/build-neko.sh $target)"
 
 export PATH="$neko:$PATH"
 case "$os" in
@@ -42,10 +42,22 @@ HAXE_STD_PATH="$std" "$haxe_bin" client.hxml
 case "$os" in
     mac)
         nekotools boot -c run.n
-        # One universal binary linked against the universal libneko. libneko
-        # itself requires macOS 11.0, so haxelib uses the same minimum.
-        cc -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 run.c -o "$stage/haxelib.new" \
-            -I"$neko/include" -L"$neko" -lneko -Wl,-rpath,@executable_path/neko
+        # One slice per architecture, each with the deployment target of the
+        # profile, linked against the libneko of the same target. The slices
+        # stay in stage/slices/ and are overwritten by the next build.
+        case "$target" in
+            mac-universal) archs="arm64 x86_64" ;;
+            *) archs="$(target_arch "$target")" ;;
+        esac
+        mkdir -p "$stage/slices"
+        slices=()
+        for a in $archs; do
+            eval "min=\${MACOS_MIN_$a}"
+            cc -O2 -arch "$a" -mmacosx-version-min="$min" run.c -o "$stage/slices/haxelib.$a" \
+                -I"$neko/include" -L"$neko" -lneko -Wl,-rpath,@executable_path/neko
+            slices+=("$stage/slices/haxelib.$a")
+        done
+        lipo -create -output "$stage/haxelib.new" "${slices[@]}"
         mv -f "$stage/haxelib.new" "$stage/haxelib"
         ;;
     linux)

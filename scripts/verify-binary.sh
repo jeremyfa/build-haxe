@@ -39,6 +39,60 @@ check_version() {
     esac
 }
 
+# haxelib commands that load the neko modules (std, zlib...), run with an
+# empty environment and a throwaway repository. Run twice: the second time
+# NEKOPATH points to decoy modules (corrupted std.ndll and friends), which
+# must be ignored because neko looks next to libneko first.
+check_haxelib() {
+    local exe="$1" home out decoy m
+    home="$(mktemp -d "${TMPDIR:-/tmp}/build-haxe-haxelib.XXXXXX")"
+    out="$(cd "$dir" && env -i HOME="$home" PATH="/usr/bin:/bin" sh -c \
+        "'$exe' setup '$home/lib' >/dev/null && '$exe' list >/dev/null && '$exe' version" 2>&1 || true)"
+    case "$out" in
+        [0-9]*) ok "haxelib setup, list and version: $out" ;;
+        *) fail "haxelib: $out" ;;
+    esac
+    decoy="$home/decoy"
+    mkdir -p "$decoy"
+    for m in std zlib regexp ssl sqlite mysql; do echo "not a module" > "$decoy/$m.ndll"; done
+    out="$(cd "$dir" && env -i HOME="$home" PATH="/usr/bin:/bin" NEKOPATH="$decoy" sh -c \
+        "'$exe' list >/dev/null && '$exe' version" 2>&1 || true)"
+    case "$out" in
+        [0-9]*) ok "haxelib ignores decoy modules in NEKOPATH (uses its own neko folder)" ;;
+        *) fail "haxelib loaded modules from NEKOPATH instead of its own folder: $out" ;;
+    esac
+}
+
+# haxe calls the haxelib next to it for -lib, even when another haxelib comes
+# first in the PATH (profiles/*/patches/all-haxelib-next-to-haxe.patch).
+check_haxe_uses_own_haxelib() {
+    local home out
+    home="$(mktemp -d "${TMPDIR:-/tmp}/build-haxe-lib.XXXXXX")"
+    mkdir -p "$home/decoy" "$home/lib" "$home/src"
+    printf '#!/bin/sh\necho DECOY haxelib used >&2\nexit 1\n' > "$home/decoy/haxelib"
+    chmod +x "$home/decoy/haxelib"
+    (cd "$dir" && env -i HOME="$home" PATH="/usr/bin:/bin" ./haxelib setup "$home/lib" >/dev/null 2>&1) || true
+    out="$(cd "$home/src" && env -i HOME="$home" PATH="$home/decoy:/usr/bin:/bin" "$dir/haxe" -lib build_haxe_missing_lib --no-output 2>&1 || true)"
+    case "$out" in
+        *DECOY*) fail "haxe called the haxelib found in the PATH: $out" ;;
+        *build_haxe_missing_lib*) ok "haxe -lib uses the haxelib next to it" ;;
+        *) fail "haxe -lib: unexpected output: $out" ;;
+    esac
+}
+
+# No global module path compiled into libneko (patches/neko).
+check_no_global_module_path() {
+    local lib
+    for lib in "$dir"/neko/libneko*.dylib "$dir"/neko/libneko.so* "$dir"/neko.dll; do
+        [ -f "$lib" ] && [ ! -L "$lib" ] || continue
+        if grep -a -q -E '/usr/local/lib/neko|/usr/lib/neko' "$lib"; then
+            fail "$(basename "$lib") still contains global module paths"
+        else
+            ok "$(basename "$lib") has no global module path"
+        fi
+    done
+}
+
 echo "verifying $dir ($target)"
 
 case "$os" in
@@ -78,8 +132,20 @@ case "$os" in
                 check_version "$(run_clean /usr/bin/arch -x86_64 "$dir/haxe" --version 2>&1)" "haxe --version (x86_64)"
             fi
         fi
-        out="$(cd "$dir" && run_clean ./haxelib version 2>&1 || true)"
-        [ -n "$out" ] && ! echo "$out" | grep -qi -E 'error|failed|not found|uncaught' && ok "haxelib version: $out" || fail "haxelib version: $out"
+        check_haxelib ./haxelib
+        check_haxe_uses_own_haxelib
+        check_no_global_module_path
+        # Every binary only links system libraries and libneko, and only has
+        # rpaths relative to itself.
+        before="$failures"
+        for f in "$dir/haxe" "$dir/haxelib" "$dir"/neko/*; do
+            [ -f "$f" ] && [ ! -L "$f" ] && file "$f" | grep -q Mach-O || continue
+            bad="$(otool -L "$f" | grep -v ':$' | awk '{print $1}' | grep -v -E '^(/usr/lib/libSystem\.B\.dylib|/usr/lib/libresolv\.9\.dylib|/usr/lib/libc\+\+\.1\.dylib|/usr/lib/libz\.1\.dylib|@rpath/libneko\.2\.dylib|/System/Library/Frameworks/)' || true)"
+            [ -z "$bad" ] || fail "$(basename "$f") links: $bad"
+            bad="$(otool -l "$f" | awk '/LC_RPATH/{getline; getline; print $2}' | grep -v -E '^@(executable|loader)_path(/|$)' || true)"
+            [ -z "$bad" ] || fail "$(basename "$f") has rpaths outside its folder: $(echo $bad)"
+        done
+        [ "$failures" = "$before" ] && ok "all binaries link only system libraries and libneko, with relative rpaths only"
         ;;
 
     linux)
@@ -96,10 +162,20 @@ case "$os" in
         fi
         check_version "$(run_clean "$dir/haxe" --version 2>&1)" "haxe --version"
         if ldd --version 2>&1 | grep -qi -E 'glibc|gnu libc'; then
-            out="$(cd "$dir" && run_clean ./haxelib version 2>&1 || true)"
-            [ -n "$out" ] && ! echo "$out" | grep -qi -E 'error|failed|not found|uncaught' && ok "haxelib version: $out" || fail "haxelib version: $out"
+            check_haxelib ./haxelib
+            glibc="$(for f in "$dir/haxelib" "$dir"/neko/*; do [ -f "$f" ] && objdump -T "$f" 2>/dev/null; done \
+                | grep -o 'GLIBC_[0-9.]*' | sort -t. -k2,2n -u | tail -1)"
+            ok "haxelib and neko require $glibc at most"
+            needed="$(for f in "$dir/haxelib" "$dir"/neko/*; do [ -f "$f" ] && readelf -d "$f" 2>/dev/null | awk '/NEEDED/{print $NF}'; done | sort -u | tr -d '[]')"
+            bad="$(echo "$needed" | grep -v -E '^(libc\.so\.6|libm\.so\.6|libdl\.so\.2|libpthread\.so\.0|librt\.so\.1|libneko\.so\.2|ld-linux.*)$' || true)"
+            [ -z "$bad" ] && ok "haxelib and neko only need glibc and libneko" || fail "haxelib/neko need: $(echo $bad)"
+            bad="$(for f in "$dir/haxelib" "$dir"/neko/*; do [ -f "$f" ] && readelf -d "$f" 2>/dev/null | awk '/RUNPATH|RPATH/{print $NF}'; done \
+                | tr -d '[]' | tr ':' '\n' | grep -v -E '^\$ORIGIN(/|$)' | sort -u || true)"
+            [ -z "$bad" ] && ok "haxelib and neko only have \$ORIGIN-relative runpaths" || fail "runpaths outside the folder: $(echo $bad)"
+            check_no_global_module_path
+            check_haxe_uses_own_haxelib
         else
-            echo "  skip  haxelib version (needs glibc, host is musl)"
+            echo "  skip  haxelib (needs glibc, host is musl)"
         fi
         ;;
 
@@ -108,8 +184,7 @@ case "$os" in
         bad="$(echo "$dlls" | grep -v -E '^(kernel32|msvcrt|ucrtbase|api-ms-win-.*|advapi32|ws2_32|crypt32|bcrypt|user32|shell32|ole32|oleaut32|secur32|iphlpapi|userenv|psapi|dbghelp|ntdll|shlwapi|version)\.dll$' || true)"
         [ -z "$bad" ] && ok "haxe.exe uses only system DLLs: $(echo $dlls)" || fail "haxe.exe depends on: $bad"
         check_version "$("$dir/haxe.exe" --version 2>&1 | tr -d '\r')" "haxe.exe --version"
-        out="$(cd "$dir" && ./haxelib.exe version 2>&1 | tr -d '\r' || true)"
-        [ -n "$out" ] && ! echo "$out" | grep -qi -E 'error|failed|not found|uncaught' && ok "haxelib version: $out" || fail "haxelib version: $out"
+        check_haxelib ./haxelib.exe
         ;;
 esac
 

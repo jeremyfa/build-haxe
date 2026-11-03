@@ -1,0 +1,20 @@
+diff -ru a/src/compiler/haxe.ml b/src/compiler/haxe.ml
+--- a/src/compiler/haxe.ml
++++ b/src/compiler/haxe.ml
+@@ -46,6 +46,16 @@
+ let other = Timer.timer ["other"];;
+ Sys.catch_break true;
+ 
++(* build-haxe: put the folder of the haxe executable first in the PATH of child
++   processes, so that the haxelib next to haxe is used (for -lib, hxcpp,
++   hashlink...) rather than one found in the global PATH. *)
++(try
++	let dir = Filename.dirname (Unix.realpath (Extc._executable_path Sys.argv.(0))) in
++	let sep = if Sys.win32 then ";" else ":" in
++	let path = try Sys.getenv "PATH" with Not_found -> "" in
++	Unix.putenv "PATH" (if path = "" then dir else dir ^ sep ^ path)
++with _ -> ());
++
+ let args = List.tl (Array.to_list Sys.argv) in
+ set_binary_mode_out stdout true;
+ set_binary_mode_out stderr true;
