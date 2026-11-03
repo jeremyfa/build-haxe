@@ -324,7 +324,11 @@ mirror_url() {
 
 # fetch_to <url> <file>: quiet download with retries, 0 on success.
 fetch_to() {
-    curl -fsSL --retry 3 --retry-delay 2 --max-time 1800 -o "$2" "$1" 2>/dev/null
+    local out="$2"
+    # On Windows the curl found first can be the native curl.exe, which does
+    # not understand Cygwin paths; D:/a/... works for both.
+    [ "$HOST_OS" = "windows" ] && out="$(cygpath -m "$out")"
+    curl -fsSL --retry 3 --retry-delay 2 --max-time 1800 -o "$out" "$1" 2>/dev/null
 }
 
 # download <url> <sha256> [asset name] [build|test]
