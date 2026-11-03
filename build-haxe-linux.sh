@@ -14,10 +14,9 @@
 # HAXE_PROFILE, HAXE_PROFILE_DIR, HAXE_OUT_DIR, HAXE_LAYOUT,
 # BUILD_HAXE_CACHE_DIR, SKIP_SETUP=1 (keep ./haxe as is). See README.md.
 # Mounts: build-haxe on /workspace (it holds the copy of HAXE_SRC_DIR),
-# BUILD_HAXE_CACHE_DIR on /cache (opam roots included), HAXE_PROFILE_DIR
-# read-only on /build-haxe-profile. Without BUILD_HAXE_CACHE_DIR, the opam
-# roots live in a Docker volume per arch (bind mounts from macOS are slow for
-# the many small files of opam).
+# BUILD_HAXE_CACHE_DIR on /cache, HAXE_PROFILE_DIR read-only on
+# /build-haxe-profile. The opam roots go to the cache on a Linux host, and to
+# a Docker volume per arch on macOS (or without BUILD_HAXE_CACHE_DIR).
 #
 # Internal: --stage neko|core|haxelib runs one stage inside the container.
 
@@ -161,11 +160,16 @@ docker build --platform "$docker_platform" --build-arg BASE_IMAGE="$GLIBC_IMAGE"
 # Mounts and environment shared by the stages
 mounts=(-v "$ROOT:/workspace")
 run_env=(-e HAXE_PROFILE="$HAXE_PROFILE" -e JOBS="$JOBS" -e HAXE_LAYOUT="$LAYOUT")
-core_opam=()
 if [ -n "${BUILD_HAXE_CACHE_DIR:-}" ]; then
     mounts+=(-v "$BUILD_HAXE_CACHE_DIR:/cache")
     run_env+=(-e BUILD_HAXE_CACHE_DIR=/cache)
-else
+fi
+# opam roots: in the cache on a Linux host (CI), so they can be cached with
+# it. On macOS they stay in a Docker volume per arch: the macOS file system is
+# case-insensitive, which breaks the OCaml build, and bind mounts from macOS
+# are slow for the many small files of opam.
+core_opam=()
+if [ -z "${BUILD_HAXE_CACHE_DIR:-}" ] || [ "$HOST_OS" = "mac" ]; then
     core_opam=(-v "build-haxe-opam-$arch_arg:/opamroot" -e BUILD_HAXE_OPAMROOT_BASE=/opamroot)
 fi
 if [ -n "${BUILD_HAXE_SOURCE:-}" ]; then
