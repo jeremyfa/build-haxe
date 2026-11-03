@@ -187,8 +187,7 @@ Inputs of the action: `platform` (required), `source` (path of the Haxe sources;
 
 neko is compiled from pinned sources by `scripts/build-neko.sh`, the same way neko's own CI does it (`cmake -DSTATIC_DEPS=all`, then its `package` target). Its dependencies (Boehm GC, zlib, mbedtls, pcre2, sqlite, MariaDB connector, OpenSSL) are linked statically. They are prefetched into `.cache/downloads` and checked against the sha256 that neko's CMake pins, with mirrors for the hosts that are often down (`archive.mariadb.org`, the OpenSSL GitHub releases). Each profile picks its neko source in `profile.env`:
 
-- `haxe5`: neko master (`NEKO_MASTER_COMMIT`). The neko output of Haxe 5 uses primitives that no neko release has yet (2.4.1 is from April 2025).
-- `haxe43`: the 2.4.1 release (`NEKO_RELEASE_COMMIT`).
+Both profiles use neko master (`NEKO_MASTER_COMMIT`): the neko output of Haxe 5 uses primitives that no neko release has yet (2.4.1 is from April 2025), and Haxe 4.3.7 passes exactly the same `macro` and `neko` suites with master as with 2.4.1 (same tests, same assertion counts, on macOS universal, Linux arm64 and Linux x64). The 2.4.1 release stays available: `NEKO_SOURCE=RELEASE`.
 
 haxelib comes from the `extra/haxelib_src` submodule of the Haxe repository, so its version follows the Haxe commit. The build compiles its client to neko bytecode with the freshly built `haxe` (`run.n`), then `nekotools boot` turns it into a small native launcher linked to libneko, with an rpath to the `neko/` folder next to it. haxelib is therefore exactly as portable as neko.
 
@@ -223,6 +222,8 @@ The two maintained Haxe branches need different OCaml dependencies. A profile is
 
 - `haxe5` for `development`: OCaml 5.3.0, mbedtls 3.6, ppx_parser.
 - `haxe43` for `4.3_bugfix`: OCaml 5.1.1, mbedtls 2.28, camlp5, ctypes pinned to 0.21.1 (luv 0.5.13 does not build with newer ctypes, like on the official 4.3 CI).
+
+Both build neko from the same master commit.
 
 A calling project can also give its own profile folder with `HAXE_PROFILE_DIR` (see above). Otherwise the profile is detected from `haxe.opam`. Each profile has a `haxe.opam.locked` with the exact version of every opam package, resolved against a pinned snapshot of opam-repository (`OPAM_REPO_COMMIT` in `versions.env`). To update them:
 
