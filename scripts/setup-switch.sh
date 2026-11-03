@@ -15,16 +15,17 @@ load_profile
 sanitize_env "$target"
 
 os="$(target_os "$target")"
-lock="$ROOT/profiles/$HAXE_PROFILE/haxe.opam.locked"
+lock="$PROFILE_LOCK"
 [ -f "$(deps_prefix "$target")/.done" ] || die "C dependencies missing for $target (run scripts/build-deps.sh $target)"
-[ -f "$HAXE_DIR/haxe.opam" ] || die "haxe/haxe.opam not found (run ./setup-haxe.sh)"
+[ -f "$HAXE_DIR/haxe.opam" ] || die "$HAXE_DIR/haxe.opam not found (run ./setup-haxe.sh, or set HAXE_SRC_DIR)"
 command -v neko >/dev/null || die "neko not in PATH (run scripts/build-neko.sh $target)"
 
 # opam-repository snapshot, extracted once and shared by every opam root
 opam_repo_snapshot() {
-    local dir="$ROOT/.cache/opam-repository/$OPAM_REPO_COMMIT"
+    local dir="$CACHE_DIR/opam-repository/$OPAM_REPO_COMMIT"
     if [ ! -f "$dir/repo" ]; then
-        local tgz="$ROOT/.cache/downloads/opam-repository-$OPAM_REPO_COMMIT.tar.gz"
+        mkdir -p "$CACHE_DIR/downloads"
+        local tgz="$CACHE_DIR/downloads/opam-repository-$OPAM_REPO_COMMIT.tar.gz"
         if [ ! -f "$tgz" ]; then
             log "downloading opam-repository $OPAM_REPO_COMMIT" >&2
             curl -fsSL --retry 5 -o "$tgz.part.$$" "https://github.com/ocaml/opam-repository/archive/$OPAM_REPO_COMMIT.tar.gz"
@@ -70,7 +71,7 @@ if [ "$mode" = "--unlocked" ]; then
     rm -f "$HAXE_DIR/haxe.opam.locked"
     "$opam" install "$HAXE_DIR" --deps-only --assume-depexts
 else
-    [ -f "$lock" ] || die "no lock file for $HAXE_PROFILE ($lock). Run scripts/update-locks.sh first."
+    [ -n "$lock" ] && [ -f "$lock" ] || die "no haxe.opam.locked in the profile folders of $HAXE_PROFILE (${PROFILE_DIRS[*]}). Run scripts/update-locks.sh first."
     if [ "$os" = "windows" ]; then
         # The compiler comes from setup-ocaml (mingw port): drop the compiler
         # pins of the lock, they describe the vanilla compiler.

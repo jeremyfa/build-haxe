@@ -49,5 +49,9 @@ fi
 # haxelib has its own submodules (hx3compat, hx4compat, crypto...)
 git -C "$HAXE_DIR" submodule update --init --recursive --depth 1 extra/haxelib_src
 
+# haxe.info and haxe.files describe the clone for the places where git cannot
+# run on it (Cygwin with Git for Windows, see load_source_info).
+"$ROOT/scripts/prepare-source.sh" --info-only "$HAXE_DIR" >/dev/null
+
 haxe_commit > "$ROOT/.haxe_commit"
 log "haxe at $(haxe_commit) ($HAXE_REPO)"

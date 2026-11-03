@@ -2,9 +2,12 @@
 # Remove everything the build scripts created. Asks for confirmation.
 # Usage: ./clean-haxe.sh [--yes]
 #
-# Removes: haxe/ (the clone), .cache/ (downloads, opam roots, neko),
-# build/ (C libraries, outputs, archives), .haxe_commit, and the Docker
-# volumes build-haxe-opam-x64 / build-haxe-opam-arm64.
+# Removes: haxe/ (the clone) with haxe.info and haxe.files, .cache/
+# (downloads, opam roots), build/ (neko, C libraries, copies of HAXE_SRC_DIR,
+# outputs, archives), .haxe_commit, and the Docker volumes
+# build-haxe-opam-x64 / build-haxe-opam-arm64.
+# A BUILD_HAXE_CACHE_DIR outside this folder and HAXE_OUT_DIR belong to the
+# caller: they are never touched.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -16,7 +19,7 @@ if [ ! -f "$SCRIPT_DIR/PLAN.md" ] || [ ! -f "$SCRIPT_DIR/versions.env" ] || [ ! 
 fi
 
 targets=()
-for p in haxe .cache build .haxe_commit; do
+for p in haxe haxe.info haxe.files .cache build .haxe_commit; do
     if [ -e "$SCRIPT_DIR/$p" ]; then targets+=("$p"); fi
 done
 

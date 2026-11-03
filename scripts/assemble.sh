@@ -19,17 +19,16 @@ load_profile
 os="$(target_os "$target")"
 stage="$(stage_dir "$target")"
 neko="$(neko_dir "$target")"
-short="$(cut -c1-10 "$stage/commit.txt")"
-base="$ROOT/build/$HAXE_PROFILE/$target/$short"
-work="$base.new.$$"
-out="$work/haxe"
 exe=""
 [ "$os" = "windows" ] && exe=".exe"
-
-for f in "haxe$exe" "haxelib$exe" commit.txt build_info.txt; do
+for f in "haxe$exe" "haxelib$exe" commit.txt build_id.txt build_info.txt; do
     [ -f "$stage/$f" ] || die "$stage/$f missing"
 done
-[ "$(cat "$stage/commit.txt")" = "$(haxe_commit)" ] || die "stage was built from $(cat "$stage/commit.txt"), haxe/ is at $(haxe_commit)"
+load_source_info
+[ "$(cat "$stage/build_id.txt")" = "$BUILD_ID" ] || die "stage was built from $(cat "$stage/build_id.txt"), the sources are at $BUILD_ID"
+base="$ROOT/build/$HAXE_PROFILE/$target/$BUILD_ID"
+work="$base.new.$$"
+out="$work/haxe"
 
 mkdir -p "$out"
 for f in "haxe$exe" "haxelib$exe" commit.txt build_info.txt; do

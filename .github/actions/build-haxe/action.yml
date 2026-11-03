@@ -1,0 +1,234 @@
+name: Build Haxe
+description: >
+  Build portable, self-contained haxe, haxelib and neko binaries for one
+  platform with build-haxe. Prepares the runner (Homebrew tools and Rosetta on
+  macOS, Docker on Linux, setup-ocaml on Windows), caches the toolchains, then
+  runs the build script of the platform.
+
+inputs:
+  platform:
+    description: mac-universal, mac-arm64, mac-x86_64, linux-x64, linux-arm64 or windows-x64
+    required: true
+  source:
+    description: >
+      Path of the Haxe sources to build (for instance a submodule of the
+      calling repository). They are copied, never written to. When empty, the
+      repository and ref inputs are cloned instead.
+    default: ''
+  repo:
+    description: Haxe repository to clone when source is empty
+    default: https://github.com/HaxeFoundation/haxe.git
+  ref:
+    description: Branch or full commit sha to clone when source is empty
+    default: development
+  out-dir:
+    description: Folder where the result is copied (<platform>/ and haxe-<platform>.<ext>)
+    default: ''
+  profile:
+    description: >
+      Dependency profile: empty (detected from the sources), a built-in profile
+      name (haxe5, haxe43), or the path of a profile folder (profile.env,
+      haxe.opam.locked, patches/).
+    default: ''
+  layout:
+    description: standard (a single haxe/ folder) or ceramic (haxe/ and neko/ side by side)
+    default: standard
+  cache:
+    description: Cache the toolchains (opam roots, downloads, neko and C library builds) with actions/cache
+    default: 'true'
+  cache-dir:
+    description: Folder of the build-haxe cache (BUILD_HAXE_CACHE_DIR)
+    default: ''
+  run-tests:
+    description: Run the default test suites of the profile after the build
+    default: 'false'
+
+outputs:
+  folder:
+    description: Built folder (haxe/, or haxe/ and neko/ for the ceramic layout)
+    value: ${{ steps.paths.outputs.FOLDER }}
+  archive:
+    description: Archive of the build
+    value: ${{ steps.paths.outputs.ARCHIVE }}
+  build-id:
+    description: Short commit of the sources, with -dirty when they have local changes
+    value: ${{ steps.paths.outputs.BUILD_ID }}
+  out-folder:
+    description: Copy of the folder in out-dir
+    value: ${{ steps.paths.outputs.OUT_FOLDER }}
+  out-archive:
+    description: Copy of the archive in out-dir
+    value: ${{ steps.paths.outputs.OUT_ARCHIVE }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve inputs
+      shell: bash
+      env:
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_SOURCE: ${{ inputs.source }}
+        INPUT_REPO: ${{ inputs.repo }}
+        INPUT_REF: ${{ inputs.ref }}
+        INPUT_OUT_DIR: ${{ inputs.out-dir }}
+        INPUT_PROFILE: ${{ inputs.profile }}
+        INPUT_LAYOUT: ${{ inputs.layout }}
+        INPUT_CACHE_DIR: ${{ inputs.cache-dir }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        # Windows paths as D:/a/..., understood by Git Bash and Cygwin.
+        topath() {
+          if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
+        }
+        absolute() {
+          case "$1" in
+            /*|[A-Za-z]:*) topath "$1" ;;
+            *) topath "$GITHUB_WORKSPACE/$1" ;;
+          esac
+        }
+        root="$(cd "$ACTION_PATH/../../.." && pwd)"
+        case "$INPUT_PLATFORM" in
+          mac-universal|mac-arm64|mac-x86_64|linux-x64|linux-arm64|windows-x64) ;;
+          *) echo "unknown platform '$INPUT_PLATFORM'" >&2; exit 1 ;;
+        esac
+        {
+          echo "BUILD_HAXE_ROOT=$(topath "$root")"
+          echo "BUILD_HAXE_PLATFORM=$INPUT_PLATFORM"
+          echo "HAXE_LAYOUT=$INPUT_LAYOUT"
+          if [ -n "$INPUT_SOURCE" ]; then
+            echo "HAXE_SRC_DIR=$(absolute "$INPUT_SOURCE")"
+          else
+            echo "HAXE_REPO=$INPUT_REPO"
+            if [[ "$INPUT_REF" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "HAXE_COMMIT=$INPUT_REF"
+            else
+              echo "HAXE_BRANCH=$INPUT_REF"
+            fi
+          fi
+          [ -z "$INPUT_OUT_DIR" ] || echo "HAXE_OUT_DIR=$(absolute "$INPUT_OUT_DIR")"
+          if [ -n "$INPUT_PROFILE" ]; then
+            if [[ "$INPUT_PROFILE" == */* ]] || [ -d "$GITHUB_WORKSPACE/$INPUT_PROFILE" ]; then
+              echo "HAXE_PROFILE_DIR=$(absolute "$INPUT_PROFILE")"
+            else
+              echo "HAXE_PROFILE=$INPUT_PROFILE"
+            fi
+          fi
+          if [ -n "$INPUT_CACHE_DIR" ]; then
+            echo "BUILD_HAXE_CACHE_DIR=$(absolute "$INPUT_CACHE_DIR")"
+          else
+            echo "BUILD_HAXE_CACHE_DIR=$(topath "$RUNNER_TEMP/build-haxe-cache")"
+          fi
+        } >> "$GITHUB_ENV"
+
+    - name: Clone Haxe
+      if: inputs.source == ''
+      shell: bash
+      working-directory: ${{ env.BUILD_HAXE_ROOT }}
+      run: ./setup-haxe.sh
+
+    # The copy of the sources is made here, in the bash of the runner (Git
+    # Bash on Windows, where git cannot read Cygwin paths), and reused by the
+    # build script.
+    - name: Copy the sources
+      if: inputs.source != ''
+      shell: bash
+      working-directory: ${{ env.BUILD_HAXE_ROOT }}
+      run: |
+        set -euo pipefail
+        snap="$(scripts/prepare-source.sh | tail -1)"
+        if command -v cygpath >/dev/null 2>&1; then snap="$(cygpath -m "$snap")"; fi
+        echo "BUILD_HAXE_SOURCE=$snap" >> "$GITHUB_ENV"
+
+    - name: Read the profile
+      id: info
+      shell: bash
+      working-directory: ${{ env.BUILD_HAXE_ROOT }}
+      run: |
+        set -euo pipefail
+        scripts/profile-info.sh "$BUILD_HAXE_PLATFORM" > "$RUNNER_TEMP/build-haxe-info.txt"
+        cat "$RUNNER_TEMP/build-haxe-info.txt"
+        cat "$RUNNER_TEMP/build-haxe-info.txt" >> "$GITHUB_OUTPUT"
+        grep '^HAXE_PROFILE=' "$RUNNER_TEMP/build-haxe-info.txt" >> "$GITHUB_ENV"
+
+    - name: Cache toolchains
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.BUILD_HAXE_CACHE_DIR }}
+        key: ${{ steps.info.outputs.CACHE_KEY }}-${{ runner.os }}-${{ runner.arch }}
+
+    # ---- macOS
+    - name: Install host tools (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: HOMEBREW_NO_AUTO_UPDATE=1 brew bundle --file="$BUILD_HAXE_ROOT/Brewfile"
+
+    - name: Install Rosetta (macOS)
+      if: runner.os == 'macOS' && (inputs.platform == 'mac-universal' || inputs.platform == 'mac-x86_64')
+      shell: bash
+      run: /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null || softwareupdate --install-rosetta --agree-to-license
+
+    - name: Build (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      working-directory: ${{ env.BUILD_HAXE_ROOT }}
+      run: SKIP_SETUP=1 ./build-haxe-mac.sh "${BUILD_HAXE_PLATFORM#mac-}"
+
+    # ---- Linux (Docker is available on the GitHub runners)
+    - name: Build (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      working-directory: ${{ env.BUILD_HAXE_ROOT }}
+      run: SKIP_SETUP=1 ./build-haxe-linux.sh "${BUILD_HAXE_PLATFORM#linux-}"
+
+    # ---- Windows
+    - name: Keep LF line endings (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: git config --global core.autocrlf false
+
+    - name: Set up OCaml (Windows)
+      if: runner.os == 'Windows'
+      uses: ocaml/setup-ocaml@ff66428f72b64472e749b22e0ad4dded4b2ddca6 # v3
+      with:
+        ocaml-compiler: ${{ steps.info.outputs.OCAML_VERSION }}
+        windows-compiler: mingw
+        opam-repositories: |
+          pinned: git+https://github.com/ocaml/opam-repository#${{ steps.info.outputs.OPAM_REPO_COMMIT }}
+
+    - name: Build (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      working-directory: ${{ env.BUILD_HAXE_ROOT }}
+      env:
+        OPAMEXTERNALSOLVER: builtin-mccs+glpk
+      run: |
+        # The Cygwin bash of setup-ocaml (opam, make and the mingw gcc live there).
+        $bash = 'D:\cygwin\bin\bash.exe'
+        if (-not (Test-Path $bash)) { $bash = 'C:\cygwin\bin\bash.exe' }
+        opam exec -- $bash -c "SKIP_SETUP=1 ./build-haxe-windows.sh"
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+
+    # ---- tests and outputs
+    - name: Test
+      if: inputs.run-tests == 'true' && runner.os != 'Windows'
+      shell: bash
+      working-directory: ${{ env.BUILD_HAXE_ROOT }}
+      run: ./test-haxe.sh "$BUILD_HAXE_PLATFORM"
+
+    - name: Test (Windows)
+      if: inputs.run-tests == 'true' && runner.os == 'Windows'
+      shell: pwsh
+      working-directory: ${{ env.BUILD_HAXE_ROOT }}
+      run: |
+        $bash = 'D:\cygwin\bin\bash.exe'
+        if (-not (Test-Path $bash)) { $bash = 'C:\cygwin\bin\bash.exe' }
+        opam exec -- $bash -c "./test-haxe.sh windows-x64"
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+
+    - name: Output paths
+      id: paths
+      shell: bash
+      working-directory: ${{ env.BUILD_HAXE_ROOT }}
+      run: scripts/output-paths.sh "$BUILD_HAXE_PLATFORM" | tee -a "$GITHUB_OUTPUT"

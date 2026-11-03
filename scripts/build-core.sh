@@ -52,6 +52,7 @@ esac
 # In the Linux containers the clone is a bind mount from the host, which is
 # case-insensitive on macOS and breaks dune. Build from a copy inside the
 # container instead (BUILD_HAXE_COPY_SOURCES=1, set by build-haxe-linux.sh).
+load_source_info
 src_root="$HAXE_DIR"
 if [ "${BUILD_HAXE_COPY_SOURCES:-0}" = "1" ]; then
     src_root="${TMPDIR:-/tmp}/haxe-src-$target"
@@ -59,38 +60,40 @@ if [ "${BUILD_HAXE_COPY_SOURCES:-0}" = "1" ]; then
     mkdir -p "$src_root"
     log "copying sources to $src_root"
     tar -C "$HAXE_DIR" --exclude='./_build*' -cf - . | tar -C "$src_root" -xf -
-    # Another build may have its patches applied in the shared clone: start
-    # the copy from the committed sources.
-    git -C "$src_root" checkout -- .
 fi
 
-# ---- profile patches. Applied to the copy, or to the clone and reverted on
-# exit so that it stays clean.
+# ---- profile patches, applied with patch(1) (git apply would look for an
+# enclosing repository). Reverted on exit when applied to the sources in
+# place, so that they stay as they were. A patch already applied (a copy taken
+# while another build had applied it) is left as is.
 applied=()
 revert_patches() {
     local p
     for p in "${applied[@]+"${applied[@]}"}"; do
-        git -C "$src_root" apply -R "$p" || warn "could not revert $p"
+        (cd "$src_root" && patch -p1 -R -f -s < "$p") || warn "could not revert $p"
     done
 }
-for p in "$ROOT/profiles/$HAXE_PROFILE/patches/"*.patch; do
-    [ -f "$p" ] || continue
+if [ "$src_root" = "$HAXE_DIR" ]; then
+    trap revert_patches EXIT
+fi
+for p in "${PROFILE_PATCHES[@]+"${PROFILE_PATCHES[@]}"}"; do
     case "$(basename "$p")" in
         all-*|"$os"-*) ;;
         *) continue ;;
     esac
+    if (cd "$src_root" && patch -p1 -R -f -s --dry-run < "$p" >/dev/null 2>&1); then
+        log "$(basename "$p") already applied"
+        continue
+    fi
     log "applying $(basename "$p")"
-    git -C "$src_root" apply --check "$p"
-    git -C "$src_root" apply "$p"
+    (cd "$src_root" && patch -p1 -f -s --dry-run < "$p" >/dev/null) || die "$p does not apply to the Haxe sources"
+    (cd "$src_root" && patch -p1 -f -s < "$p")
     applied+=("$p")
 done
-if [ "$src_root" = "$HAXE_DIR" ]; then
-    trap revert_patches EXIT
-fi
 
 cd "$src_root"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-short="$(git rev-parse --short HEAD)"
+branch="$SRC_BRANCH"
+short="${SRC_COMMIT:0:7}"
 
 case "$PROFILE_BUILD_STYLE" in
     dune-release)
@@ -104,16 +107,17 @@ case "$PROFILE_BUILD_STYLE" in
         export LIB_PARAMS
         export STATICLINK=1
         log "building haxe ($HAXE_PROFILE, $target)"
-        dune build -j "$JOBS" --profile release src/haxe.exe
+        # --root: never use a dune-workspace of an enclosing project
+        dune build --root . -j "$JOBS" --profile release src/haxe.exe
         ;;
     dune-workspace-dev)
         log "building prebuild ($HAXE_PROFILE, $target)"
-        dune build -j "$JOBS" --workspace dune-workspace.dev src-prebuild/prebuild.exe
+        dune build --root . -j "$JOBS" --workspace dune-workspace.dev src-prebuild/prebuild.exe
         prebuild="$DUNE_BUILD_DIR/default/src-prebuild/prebuild.exe"
         "$prebuild" libparams "${libparams[@]}" > lib.sexp
         "$prebuild" version "${ADD_REVISION:-0}" "$branch" "$short" > src/compiler/version.ml
         log "building haxe ($HAXE_PROFILE, $target)"
-        dune build -j "$JOBS" --workspace dune-workspace.dev src/haxe.exe
+        dune build --root . -j "$JOBS" --workspace dune-workspace.dev src/haxe.exe
         ;;
     *) die "unknown PROFILE_BUILD_STYLE '$PROFILE_BUILD_STYLE'" ;;
 esac
@@ -122,13 +126,25 @@ replace_file "$DUNE_BUILD_DIR/default/src/haxe.exe" "$stage/haxe$exe"
 chmod 755 "$stage/haxe$exe"
 
 # ---- metadata
-haxe_commit > "$stage/commit.txt"
+echo "$SRC_COMMIT" > "$stage/commit.txt"
+echo "$BUILD_ID" > "$stage/build_id.txt"
 {
-    echo "Haxe repository: $(git remote get-url origin)"
-    echo "Haxe commit: $(haxe_commit)"
-    echo "Haxe commit date: $(git show -s --format=%cI HEAD)"
-    echo "haxelib commit: $(git -C extra/haxelib_src rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo "Haxe repository: $SRC_REPO"
+    if [ "$SRC_DIRTY" = "1" ]; then
+        echo "Haxe commit: $SRC_COMMIT-dirty"
+    else
+        echo "Haxe commit: $SRC_COMMIT"
+    fi
+    echo "Haxe commit date: $SRC_DATE"
+    echo "Haxe branch: $SRC_BRANCH"
+    echo "haxelib commit: $SRC_HAXELIB_COMMIT"
+    if [ "$SRC_DIRTY" = "1" ]; then
+        echo "Local changes (built from $SRC_DIR):"
+        echo "$SRC_CHANGES" | sed 's/^/  /'
+    fi
     echo "Profile: $HAXE_PROFILE"
+    if [ -n "${HAXE_PROFILE_DIR:-}" ]; then echo "Profile folder: $HAXE_PROFILE_DIR (base: ${PROFILE_BASE:-none})"; fi
+    for p in "${PROFILE_PATCHES[@]+"${PROFILE_PATCHES[@]}"}"; do echo "Patch: $(basename "$p")"; done
     echo "Target: $target"
     echo "OCaml: $OCAML_VERSION"
     echo "zlib: $ZLIB_VERSION"

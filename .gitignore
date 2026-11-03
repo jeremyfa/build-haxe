@@ -1,4 +1,6 @@
 /haxe
+/haxe.info
+/haxe.files
 /.cache
 /build
 .haxe_commit

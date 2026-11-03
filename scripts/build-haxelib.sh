@@ -72,9 +72,12 @@ case "$os" in
         ;;
 esac
 
-# run.n is tracked in the haxelib repository: restore it so the submodule
-# stays clean and can move to another commit.
-git -C "$src" checkout -- run.n 2>/dev/null || true
+# run.n is tracked in the haxelib repository: restore it in the clone so the
+# submodule stays clean and can move to another commit (a copy of
+# HAXE_SRC_DIR is refreshed by the next build anyway).
+if sources_are_clone; then
+    git -C "$src" checkout -- run.n 2>/dev/null || true
+fi
 rm -f run.c
 
 log "haxelib built: $stage/haxelib$exe"

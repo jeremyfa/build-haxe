@@ -74,7 +74,7 @@ if [ "$target" = "mac-universal" ]; then
 fi
 
 # ---- sources
-work="$ROOT/build/neko-work/$NEKO_NAME-$patch_id/$target"
+work="$PRODUCTS_CACHE_DIR/neko-work/$NEKO_NAME-$patch_id/$target"
 archive="$(download "https://codeload.github.com/HaxeFoundation/neko/tar.gz/$NEKO_COMMIT" "$NEKO_SHA256")"
 src="$work/neko-$NEKO_COMMIT"
 if [ ! -d "$src" ]; then
@@ -105,12 +105,12 @@ mirrors_for() {
 }
 prefetch_deps() {
     local dl="$build/libs/download" url sha file cached candidate got
-    mkdir -p "$dl" "$ROOT/.cache/downloads"
+    mkdir -p "$dl" "$CACHE_DIR/downloads"
     awk '/^[ \t]*URL[ \t]+https?:/{u=$2} /URL_HASH[ \t]+SHA256=/{sub(/.*SHA256=/,""); if(u!=""){print u, $1; u=""}}' \
         "$src/CMakeLists.txt" "$src"/libs/*/CMakeLists.txt |
     while read -r url sha; do
         file="$(basename "$url")"
-        cached="$ROOT/.cache/downloads/$file"
+        cached="$CACHE_DIR/downloads/$file"
         if [ ! -f "$cached" ] || [ "$(sha256_of "$cached")" != "$sha" ]; then
             for candidate in $(mirrors_for "$url"); do
                 log "downloading $candidate"

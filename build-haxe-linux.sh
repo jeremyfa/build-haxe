@@ -1,27 +1,42 @@
 #!/usr/bin/env bash
 # Build haxe and haxelib for Linux.
-# Usage: ./build-haxe-linux.sh [x64|arm64]   (default: host architecture)
+# Usage: ./build-haxe-linux.sh [x64|arm64] [--ceramic-layout]   (default: host architecture)
 #
 # Runs in Docker on every host (Docker Desktop on macOS, native Docker on
 # Linux and GitHub Actions) so the result is the same everywhere:
 #   0. Debian 11 (glibc 2.31): neko built from source, static dependencies
 #   1. Alpine (musl): C libraries, opam switch, static haxe binary
-#   2. Debian 11: haxelib linked to that neko, assembly, checks, archive
+#   2. Debian 11: haxelib linked to that neko, assembly, checks, archives
 #   3. Smoke tests of the result in bare alpine, debian and ubuntu images
+# Then the result is copied to HAXE_OUT_DIR, if set (on the host).
 #
-# Environment: HAXE_REPO, HAXE_BRANCH, HAXE_COMMIT, HAXE_PROFILE,
-# SKIP_SETUP=1 (keep ./haxe as is),
-# BUILD_HAXE_OPAM_CACHE=<host dir> (bind a host folder for the opam roots
-# instead of a named Docker volume, used on CI to cache them).
+# Environment: HAXE_SRC_DIR or HAXE_REPO / HAXE_BRANCH / HAXE_COMMIT,
+# HAXE_PROFILE, HAXE_PROFILE_DIR, HAXE_OUT_DIR, HAXE_LAYOUT,
+# BUILD_HAXE_CACHE_DIR, SKIP_SETUP=1 (keep ./haxe as is). See README.md.
+# Mounts: build-haxe on /workspace (it holds the copy of HAXE_SRC_DIR),
+# BUILD_HAXE_CACHE_DIR on /cache (opam roots included), HAXE_PROFILE_DIR
+# read-only on /build-haxe-profile. Without BUILD_HAXE_CACHE_DIR, the opam
+# roots live in a Docker volume per arch (bind mounts from macOS are slow for
+# the many small files of opam).
 #
 # Internal: --stage neko|core|haxelib runs one stage inside the container.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/scripts/common.sh"
+source "$SCRIPT_DIR/scripts/entry.sh"
 
-arch_arg="${1:-}"
+parse_entry_args "$@"
+arch_arg=""
 stage_arg=""
-if [ "${2:-}" = "--stage" ]; then stage_arg="${3:?--stage needs neko, core or haxelib}"; fi
+set -- "${ENTRY_ARGS[@]+"${ENTRY_ARGS[@]}"}"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --stage) stage_arg="${2:?--stage needs neko, core or haxelib}"; shift ;;
+        x64|amd64|arm64|aarch64) arch_arg="$1" ;;
+        *) die "usage: build-haxe-linux.sh [x64|arm64] [--ceramic-layout]" ;;
+    esac
+    shift
+done
 
 if [ -z "$arch_arg" ]; then
     case "$HOST_ARCH" in
@@ -32,7 +47,6 @@ fi
 case "$arch_arg" in
     x64|amd64) arch_arg=x64; docker_platform=linux/amd64 ;;
     arm64|aarch64) arch_arg=arm64; docker_platform=linux/arm64 ;;
-    *) die "usage: build-haxe-linux.sh [x64|arm64]" ;;
 esac
 target="linux-$arch_arg"
 
@@ -52,12 +66,8 @@ if [ -n "$stage_arg" ]; then
             ;;
         haxelib)
             "$ROOT/scripts/build-haxelib.sh" "$target"
-            out="$("$ROOT/scripts/assemble.sh" "$target" | tail -1)"
-            "$ROOT/scripts/verify-binary.sh" "$out" "$target"
-            "$ROOT/scripts/package.sh" "$target"
-            if [ "${CERAMIC_LAYOUT:-0}" = "1" ]; then
-                "$ROOT/scripts/package.sh" "$target" --ceramic-layout
-            fi
+            "$ROOT/scripts/assemble.sh" "$target"
+            package_target "$target"
             ;;
         *) die "unknown stage '$stage_arg'" ;;
     esac
@@ -66,16 +76,13 @@ fi
 
 # ---------------------------------------------------------------- on the host
 "$ROOT/scripts/check-host.sh" "$target"
-
-if [ "${SKIP_SETUP:-0}" != "1" ] || [ ! -d "$HAXE_DIR/.git" ]; then
-    "$ROOT/setup-haxe.sh"
-fi
+prepare_sources
 HAXE_PROFILE="$("$ROOT/scripts/detect-profile.sh")"
 export HAXE_PROFILE
 load_profile
-log "profile: $HAXE_PROFILE, target: $target"
+log "profile: $HAXE_PROFILE, target: $target, sources: $HAXE_DIR"
 
-# Downloads happen on the host, into the bind-mounted .cache
+# Downloads happen on the host, into the mounted cache
 "$ROOT/scripts/fetch-opam.sh" "$target"
 
 # On macOS: start Docker Desktop if it isn't running, and stop it on exit.
@@ -151,32 +158,40 @@ docker build --platform "$docker_platform" --build-arg ALPINE_IMAGE="$ALPINE_IMA
 docker build --platform "$docker_platform" --build-arg BASE_IMAGE="$GLIBC_IMAGE" --build-arg DEBIAN_SNAPSHOT="$GLIBC_SNAPSHOT" \
     -t "$glibc_tag" -f "$ROOT/docker/linux-glibc.Dockerfile" "$ROOT/docker"
 
-# opam roots: a named volume per arch (bind mounts from macOS are slow for
-# the many small files opam creates), or a host folder on CI.
-if [ -n "${BUILD_HAXE_OPAM_CACHE:-}" ]; then
-    mkdir -p "$BUILD_HAXE_OPAM_CACHE"
-    opam_mount=(-v "$BUILD_HAXE_OPAM_CACHE:/opamroot")
+# Mounts and environment shared by the stages
+mounts=(-v "$ROOT:/workspace")
+run_env=(-e HAXE_PROFILE="$HAXE_PROFILE" -e JOBS="$JOBS" -e HAXE_LAYOUT="$LAYOUT")
+core_opam=()
+if [ -n "${BUILD_HAXE_CACHE_DIR:-}" ]; then
+    mounts+=(-v "$BUILD_HAXE_CACHE_DIR:/cache")
+    run_env+=(-e BUILD_HAXE_CACHE_DIR=/cache)
 else
-    opam_mount=(-v "build-haxe-opam-$arch_arg:/opamroot")
+    core_opam=(-v "build-haxe-opam-$arch_arg:/opamroot" -e BUILD_HAXE_OPAMROOT_BASE=/opamroot)
+fi
+if [ -n "${BUILD_HAXE_SOURCE:-}" ]; then
+    case "$BUILD_HAXE_SOURCE" in
+        "$ROOT"/*) run_env+=(-e BUILD_HAXE_SOURCE="/workspace/${BUILD_HAXE_SOURCE#"$ROOT"/}") ;;
+        *) die "the copy of the sources must be inside $ROOT" ;;
+    esac
+fi
+if [ -n "${HAXE_PROFILE_DIR:-}" ]; then
+    mounts+=(-v "$HAXE_PROFILE_DIR:/build-haxe-profile:ro")
+    run_env+=(-e HAXE_PROFILE_DIR=/build-haxe-profile)
 fi
 
-run_env=(-e HAXE_PROFILE="$HAXE_PROFILE" -e BUILD_HAXE_OPAMROOT_BASE=/opamroot -e JOBS="$JOBS"
-    -e CERAMIC_LAYOUT="${CERAMIC_LAYOUT:-0}")
-
 log "stage 0: neko $NEKO_NAME ($GLIBC_IMAGE, $docker_platform)"
-docker run --rm --platform "$docker_platform" -v "$ROOT:/workspace" \
-    "${run_env[@]}" -w /workspace "$glibc_tag" ./build-haxe-linux.sh "$arch_arg" --stage neko
+docker run --rm --platform "$docker_platform" "${mounts[@]}" "${run_env[@]}" \
+    -w /workspace "$glibc_tag" ./build-haxe-linux.sh "$arch_arg" --stage neko
 
 log "stage 1: static haxe (Alpine, $docker_platform)"
-docker run --rm --platform "$docker_platform" -v "$ROOT:/workspace" "${opam_mount[@]}" \
-    "${run_env[@]}" -e BUILD_HAXE_COPY_SOURCES=1 -w /workspace "$alpine_tag" ./build-haxe-linux.sh "$arch_arg" --stage core
+docker run --rm --platform "$docker_platform" "${mounts[@]}" "${core_opam[@]+"${core_opam[@]}"}" "${run_env[@]}" \
+    -e BUILD_HAXE_COPY_SOURCES=1 -w /workspace "$alpine_tag" ./build-haxe-linux.sh "$arch_arg" --stage core
 
 log "stage 2: haxelib, assembly and checks ($GLIBC_IMAGE, $docker_platform)"
-docker run --rm --platform "$docker_platform" -v "$ROOT:/workspace" \
-    "${run_env[@]}" -w /workspace "$glibc_tag" ./build-haxe-linux.sh "$arch_arg" --stage haxelib
+docker run --rm --platform "$docker_platform" "${mounts[@]}" "${run_env[@]}" \
+    -w /workspace "$glibc_tag" ./build-haxe-linux.sh "$arch_arg" --stage haxelib
 
-short="$(cut -c1-10 "$(stage_dir "$target")/commit.txt")"
-out_rel="build/$HAXE_PROFILE/$target/$short/haxe"
+out_dir="$(layout_folder "$target" standard)/haxe"
 
 log "stage 3: smoke tests in bare images"
 # haxe is static: it must run everywhere. haxelib and neko need glibc 2.31 or
@@ -188,14 +203,14 @@ for image in $haxe_images $haxelib_images; do
     docker pull -q --platform "$docker_platform" "$image" >/dev/null
 done
 for image in $haxe_images; do
-    v="$(docker run --rm --platform "$docker_platform" -v "$ROOT/$out_rel:/haxe:ro" "$image" /haxe/haxe --version 2>&1 || true)"
+    v="$(docker run --rm --platform "$docker_platform" -v "$out_dir:/haxe:ro" "$image" /haxe/haxe --version 2>&1 || true)"
     case "$v" in
         [0-9]*) log "  haxe --version in $image: $v" ;;
         *) die "haxe does not run in $image: $v" ;;
     esac
 done
 for image in $haxelib_images; do
-    v="$(docker run --rm --platform "$docker_platform" -v "$ROOT/$out_rel:/haxe:ro" -e HOME=/tmp "$image" \
+    v="$(docker run --rm --platform "$docker_platform" -v "$out_dir:/haxe:ro" -e HOME=/tmp "$image" \
         sh -c 'mkdir -p /tmp/lib && /haxe/haxelib setup /tmp/lib >/dev/null && /haxe/haxelib list >/dev/null && /haxe/haxelib version && /haxe/neko/neko -version' 2>&1 || true)"
     case "$v" in
         [0-9]*) log "  haxelib and neko in $image: $(echo $v)" ;;
@@ -203,7 +218,5 @@ for image in $haxelib_images; do
     esac
 done
 
-echo
-echo "Linux $arch_arg build complete. Available in:"
-echo "  - $ROOT/$out_rel"
-echo "  - $ROOT/build/archives/haxe-$HAXE_PROFILE-$short-$target.tar.gz"
+export_target "$target"
+print_summary "$target"

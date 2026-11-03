@@ -1,16 +1,33 @@
 #!/usr/bin/env bash
-# Portability checks on an assembled folder.
-# Usage: scripts/verify-binary.sh <assembled haxe folder> <target>
-# Exits non-zero on the first failed check.
+# Portability and self-containment checks on an assembled folder.
+# Usage: scripts/verify-binary.sh <folder> <target> [standard|ceramic]
+#   standard: <folder> is the haxe/ folder (neko in haxe/neko/, next to the
+#             executables on Windows)
+#   ceramic:  <folder> holds haxe/ and neko/ side by side
+# Exits non-zero when a check failed.
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
-dir="${1:?usage: verify-binary.sh <folder> <target>}"
-target="${2:?usage: verify-binary.sh <folder> <target>}"
+folder="${1:?usage: verify-binary.sh <folder> <target> [standard|ceramic]}"
+target="${2:?usage: verify-binary.sh <folder> <target> [standard|ceramic]}"
+layout="${3:-standard}"
 check_target "$target"
 load_profile
 
 os="$(target_os "$target")"
+if [ "$layout" = "ceramic" ]; then
+    dir="$folder/haxe"
+    nekodir="$folder/neko"
+    nekorel="../neko"
+elif [ "$os" = "windows" ]; then
+    dir="$folder"
+    nekodir="$folder"
+    nekorel="."
+else
+    dir="$folder"
+    nekodir="$folder/neko"
+    nekorel="neko"
+fi
 arch="$(target_arch "$target")"
 failures=0
 ok() { echo "  ok    $*"; }
@@ -24,9 +41,10 @@ run_clean() {
 }
 
 expected_version_prefix() {
-    case "$HAXE_PROFILE" in
+    case "${PROFILE_BASE:-$HAXE_PROFILE}" in
         haxe43) echo "4.3." ;;
         haxe5) echo "5." ;;
+        *) echo "" ;;
     esac
 }
 
@@ -83,7 +101,7 @@ check_haxe_uses_own_haxelib() {
 # No global module path compiled into libneko (patches/neko).
 check_no_global_module_path() {
     local lib
-    for lib in "$dir"/neko/libneko*.dylib "$dir"/neko/libneko.so* "$dir"/neko.dll; do
+    for lib in "$nekodir"/libneko*.dylib "$nekodir"/libneko.so* "$nekodir"/neko.dll "$dir"/neko.dll; do
         [ -f "$lib" ] && [ ! -L "$lib" ] || continue
         if grep -a -q -E '/usr/local/lib/neko|/usr/lib/neko' "$lib"; then
             fail "$(basename "$lib") still contains global module paths"
@@ -93,7 +111,7 @@ check_no_global_module_path() {
     done
 }
 
-echo "verifying $dir ($target)"
+echo "verifying $folder ($target, $layout layout)"
 
 case "$os" in
     mac)
@@ -105,7 +123,7 @@ case "$os" in
         bad="$(echo "$libs" | grep -v -E '^(/usr/lib/libSystem\.B\.dylib|@rpath/libneko\.2\.dylib)$' || true)"
         [ -z "$bad" ] && ok "haxelib links only libSystem and libneko" || fail "haxelib links: $bad"
         rpaths="$(otool -l "$dir/haxelib" | awk '/LC_RPATH/{getline; getline; print $2}' | sort -u)"
-        [ "$rpaths" = "@executable_path/neko" ] && ok "haxelib rpath is @executable_path/neko" || fail "haxelib rpaths: $rpaths"
+        [ "$rpaths" = "@executable_path/$nekorel" ] && ok "haxelib rpath is @executable_path/$nekorel" || fail "haxelib rpaths: $rpaths"
 
         archs="$(lipo -archs "$dir/haxe")"
         case "$arch" in
@@ -138,7 +156,7 @@ case "$os" in
         # Every binary only links system libraries and libneko, and only has
         # rpaths relative to itself.
         before="$failures"
-        for f in "$dir/haxe" "$dir/haxelib" "$dir"/neko/*; do
+        for f in "$dir/haxe" "$dir/haxelib" "$nekodir"/*; do
             [ -f "$f" ] && [ ! -L "$f" ] && file "$f" | grep -q Mach-O || continue
             bad="$(otool -L "$f" | grep -v ':$' | awk '{print $1}' | grep -v -E '^(/usr/lib/libSystem\.B\.dylib|/usr/lib/libresolv\.9\.dylib|/usr/lib/libc\+\+\.1\.dylib|/usr/lib/libz\.1\.dylib|@rpath/libneko\.2\.dylib|/System/Library/Frameworks/)' || true)"
             [ -z "$bad" ] || fail "$(basename "$f") links: $bad"
@@ -154,7 +172,7 @@ case "$os" in
             needed="$(readelf -d "$dir/haxe" 2>/dev/null | grep NEEDED || true)"
             [ -z "$needed" ] && ok "haxe has no NEEDED entries" || fail "haxe NEEDED: $needed"
             runpath="$(readelf -d "$dir/haxelib" | awk '/RUNPATH|RPATH/{print $NF}')"
-            [ "$runpath" = "[\$ORIGIN/neko]" ] && ok "haxelib runpath is \$ORIGIN/neko" || fail "haxelib runpath: $runpath"
+            [ "$runpath" = "[\$ORIGIN/$nekorel]" ] && ok "haxelib runpath is \$ORIGIN/$nekorel" || fail "haxelib runpath: $runpath"
         fi
         if command -v objdump >/dev/null; then
             glibc="$(objdump -T "$dir/haxelib" | grep -o 'GLIBC_[0-9.]*' | sort -t. -k2,2n -k3,3n -u | tail -1)"
@@ -163,13 +181,13 @@ case "$os" in
         check_version "$(run_clean "$dir/haxe" --version 2>&1)" "haxe --version"
         if ldd --version 2>&1 | grep -qi -E 'glibc|gnu libc'; then
             check_haxelib ./haxelib
-            glibc="$(for f in "$dir/haxelib" "$dir"/neko/*; do [ -f "$f" ] && objdump -T "$f" 2>/dev/null; done \
+            glibc="$(for f in "$dir/haxelib" "$nekodir"/*; do [ -f "$f" ] && objdump -T "$f" 2>/dev/null; done \
                 | grep -o 'GLIBC_[0-9.]*' | sort -t. -k2,2n -u | tail -1)"
             ok "haxelib and neko require $glibc at most"
-            needed="$(for f in "$dir/haxelib" "$dir"/neko/*; do [ -f "$f" ] && readelf -d "$f" 2>/dev/null | awk '/NEEDED/{print $NF}'; done | sort -u | tr -d '[]')"
+            needed="$(for f in "$dir/haxelib" "$nekodir"/*; do [ -f "$f" ] && readelf -d "$f" 2>/dev/null | awk '/NEEDED/{print $NF}'; done | sort -u | tr -d '[]')"
             bad="$(echo "$needed" | grep -v -E '^(libc\.so\.6|libm\.so\.6|libdl\.so\.2|libpthread\.so\.0|librt\.so\.1|libneko\.so\.2|ld-linux.*)$' || true)"
             [ -z "$bad" ] && ok "haxelib and neko only need glibc and libneko" || fail "haxelib/neko need: $(echo $bad)"
-            bad="$(for f in "$dir/haxelib" "$dir"/neko/*; do [ -f "$f" ] && readelf -d "$f" 2>/dev/null | awk '/RUNPATH|RPATH/{print $NF}'; done \
+            bad="$(for f in "$dir/haxelib" "$nekodir"/*; do [ -f "$f" ] && readelf -d "$f" 2>/dev/null | awk '/RUNPATH|RPATH/{print $NF}'; done \
                 | tr -d '[]' | tr ':' '\n' | grep -v -E '^\$ORIGIN(/|$)' | sort -u || true)"
             [ -z "$bad" ] && ok "haxelib and neko only have \$ORIGIN-relative runpaths" || fail "runpaths outside the folder: $(echo $bad)"
             check_no_global_module_path
@@ -202,6 +220,6 @@ for t in $env_targets; do
 done
 
 if [ "$failures" -gt 0 ]; then
-    die "$failures check(s) failed for $dir"
+    die "$failures check(s) failed for $folder"
 fi
-log "all checks passed for $target"
+log "all checks passed for $target ($layout layout)"

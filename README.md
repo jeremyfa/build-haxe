@@ -71,7 +71,7 @@ From the Cygwin bash of an opam installation with a mingw switch:
 opam exec -- bash ./build-haxe-windows.sh
 ```
 
-Outputs go to `build/<profile>/<target>/<commit>/haxe/` and archives to `build/archives/haxe-<profile>-<commit>-<target>.{zip,tar.gz}`.
+Outputs go to `build/<profile>/<target>/<build id>/haxe/` and archives to `build/archives/haxe-<profile>-<build id>-<target>.{zip,tar.gz}`, where the build id is the short commit, with `-dirty` when the sources have local changes. Add `--ceramic-layout` (or `HAXE_LAYOUT=ceramic`) to also get the [ceramic layout](#ceramic-layout).
 
 The first build of a target compiles OCaml and all the opam packages (about 10 minutes natively, more under Rosetta). Later builds reuse them.
 
@@ -83,6 +83,11 @@ The first build of a target compiles OCaml and all the opam packages (about 10 m
 | `HAXE_BRANCH` | `development` | branch |
 | `HAXE_COMMIT` | | exact commit, takes precedence over the branch |
 | `HAXE_PROFILE` | detected | `haxe5` or `haxe43` |
+| `HAXE_SRC_DIR` | | build these sources instead of cloning (see [Using build-haxe from another project](#using-build-haxe-from-another-project)) |
+| `HAXE_PROFILE_DIR` | | a profile folder of the caller (see [Profiles](#profiles)) |
+| `HAXE_OUT_DIR` | | copy the result there, with stable names |
+| `HAXE_LAYOUT` | `standard` | `ceramic` for haxe/ and neko/ side by side |
+| `BUILD_HAXE_CACHE_DIR` | `.cache` and `build/` | where downloads, opam roots, neko and the C libraries are kept |
 | `SKIP_SETUP` | `0` | `1` builds `haxe/` as it is, without fetching |
 | `SIGN_IDENTITY` | | macOS: sign with this Developer ID (hardened runtime) instead of ad hoc |
 
@@ -92,6 +97,91 @@ HAXE_REPO=https://github.com/jeremyfa/haxe.git HAXE_BRANCH=new_csharp ./build-ha
 ```
 
 The clone lives in `haxe/`. To build from another repository, run `./clean-haxe.sh` first (the scripts refuse to switch the origin of an existing clone).
+
+## Using build-haxe from another project
+
+build-haxe can build the Haxe sources of another project, for instance a project that has both `haxe` and `build-haxe` as git submodules, locally and on its CI. The environment variables below drive it; they work the same on every platform.
+
+| Variable | |
+|---|---|
+| `HAXE_SRC_DIR=/path/to/haxe` | Build these sources: no clone, no fetch. They are copied to `build/source/` (tracked files and new files that are not ignored, with their uncommitted changes, submodules included) and nothing is ever written in them: git runs with `GIT_OPTIONAL_LOCKS=0`, so even the index is left untouched. Every submodule must be initialized in that folder, or the build stops and says which command to run. When the sources have local changes, the build id ends with `-dirty` and `build_info.txt` lists the changed files. On Linux, the copy is what the containers see (it lives in build-haxe, mounted on `/workspace`). |
+| `HAXE_OUT_DIR=/path/to/out` | Copy the result to `$HAXE_OUT_DIR/<platform>/` and `$HAXE_OUT_DIR/haxe-<platform>.<zip or tar.gz>`. `<platform>` is the target (`mac-universal`, `linux-x64`, `linux-arm64`, `windows-x64`), or `mac`, `linux-x86_64`, `linux-arm64`, `windows` with the ceramic layout. Files are replaced one by one (through a new inode, so that macOS does not kill a replaced executable) and nothing is deleted there: files that a new build does not provide are reported and left in place. |
+| `BUILD_HAXE_CACHE_DIR=/path/to/cache` | Keep downloads, opam roots, neko and the C libraries there instead of `.cache/` and `build/` of build-haxe, so the caller can cache them (with `actions/cache` on GitHub). On Linux the folder is mounted on `/cache`, opam roots included. opam roots cannot be moved once created: keep the path stable. |
+| `HAXE_PROFILE_DIR=/path/to/profile` | A profile of the caller: `profile.env`, optionally `haxe.opam.locked` and `patches/`. With `PROFILE_BASE=auto` (or `haxe5`, `haxe43`) in its `profile.env`, it extends the built-in profile matching the sources: its settings win, its patches are applied after the built-in ones, and the built-in lock is used unless it has its own. `PROFILE_NAME` names it (default: the folder name); the name keys the opam roots and the outputs. |
+
+### Ceramic layout
+
+With `--ceramic-layout` (or `HAXE_LAYOUT=ceramic`), the build also produces the layout of ceramic's `git/haxe-binary`: `haxe/` and `neko/` side by side, in folders named `mac`, `linux-x86_64`, `linux-arm64` and `windows`. Lookups stay relative: `haxelib` finds libneko through an rpath to `../neko` on macOS and Linux. On Windows a DLL is only found next to the executable, so `haxe/` also holds the neko runtime that `haxelib.exe` needs (`neko.dll`, the `.ndll` modules and their DLLs), and `neko/` holds the full neko. `verify-binary.sh` checks this layout too (relative rpaths, haxelib with an empty environment and decoy modules).
+
+### Example: haxe and build-haxe as submodules
+
+```
+my-project/
+  haxe/            submodule: the Haxe sources to build (possibly with local changes)
+  build-haxe/      submodule: this repository
+  haxe-profile/    optional: profile.env and patches of my-project
+  haxe-binary/     where the binaries go
+```
+
+`haxe-profile/profile.env`, if the project needs its own patches:
+
+```bash
+PROFILE_NAME=my-project
+PROFILE_BASE=auto
+```
+
+Locally, from `my-project/`:
+
+```bash
+git submodule update --init --recursive
+
+export HAXE_SRC_DIR="$PWD/haxe"
+export HAXE_OUT_DIR="$PWD/haxe-binary"
+export HAXE_PROFILE_DIR="$PWD/haxe-profile"         # optional
+export BUILD_HAXE_CACHE_DIR="$HOME/.cache/build-haxe" # optional, keeps the toolchains between clones
+
+build-haxe/build-haxe-mac.sh universal --ceramic-layout
+build-haxe/build-haxe-linux.sh arm64 --ceramic-layout
+build-haxe/build-haxe-linux.sh x64 --ceramic-layout
+# haxe-binary/mac, haxe-binary/linux-arm64, haxe-binary/linux-x86_64
+```
+
+On GitHub Actions, with the composite action of build-haxe (`.github/actions/build-haxe`). It prepares the runner (Homebrew tools and Rosetta on macOS, Docker on Linux, `ocaml/setup-ocaml` on Windows), caches the toolchains, and runs the script of the platform:
+
+```yaml
+jobs:
+  haxe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: mac-universal, runner: macos-15 }
+          - { platform: linux-x64, runner: ubuntu-24.04 }
+          - { platform: linux-arm64, runner: ubuntu-24.04-arm }
+          - { platform: windows-x64, runner: windows-2025 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - id: haxe
+        uses: ./build-haxe/.github/actions/build-haxe
+        with:
+          platform: ${{ matrix.platform }}
+          source: haxe
+          out-dir: haxe-binary
+          profile: haxe-profile   # optional
+          layout: ceramic
+          run-tests: 'false'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: haxe-${{ matrix.platform }}
+          path: ${{ steps.haxe.outputs.archive }}
+```
+
+Inputs of the action: `platform` (required), `source` (path of the Haxe sources; when empty, `repo` and `ref` are cloned), `out-dir`, `profile` (a built-in name or the path of a profile folder), `layout` (`standard` or `ceramic`), `cache` (default `true`), `cache-dir`, `run-tests`. Outputs: `folder`, `archive`, `build-id`, `out-folder`, `out-archive`. The workflow of build-haxe itself (`.github/workflows/build-haxe.yml`) uses the same action.
 
 ## neko and haxelib
 
@@ -109,14 +199,14 @@ The two maintained Haxe branches need different OCaml dependencies. A profile is
 - `haxe5` for `development`: OCaml 5.3.0, mbedtls 3.6, ppx_parser.
 - `haxe43` for `4.3_bugfix`: OCaml 5.1.1, mbedtls 2.28, camlp5, ctypes pinned to 0.21.1 (luv 0.5.13 does not build with newer ctypes, like on the official 4.3 CI).
 
-The profile is detected from `haxe/haxe.opam`. Each profile has a `haxe.opam.locked` with the exact version of every opam package, resolved against a pinned snapshot of opam-repository (`OPAM_REPO_COMMIT` in `versions.env`). To update them:
+A calling project can also give its own profile folder with `HAXE_PROFILE_DIR` (see above). Otherwise the profile is detected from `haxe.opam`. Each profile has a `haxe.opam.locked` with the exact version of every opam package, resolved against a pinned snapshot of opam-repository (`OPAM_REPO_COMMIT` in `versions.env`). To update them:
 
 ```bash
 HAXE_PROFILE=haxe5 scripts/update-locks.sh mac-arm64
 HAXE_BRANCH=4.3_bugfix ./setup-haxe.sh && HAXE_PROFILE=haxe43 scripts/update-locks.sh mac-arm64
 ```
 
-Each OCaml version gets its own opam root (`.cache/opam/<profile>-<target>-ocaml<version>`), so changing it never reuses an old one. `profiles/<profile>/patches/` can hold patches applied to the Haxe sources during the build and reverted afterwards. The file name prefix selects the platform (`all-`, `mac-`, `linux-`, `windows-`).
+Each OCaml version gets its own opam root (`.cache/opam/<profile>-<target>-ocaml<version>`), so changing it never reuses an old one. `profiles/<profile>/patches/` can hold patches applied to the Haxe sources during the build (with `patch -p1`, to a copy or reverted afterwards). The file name prefix selects the platform (`all-`, `mac-`, `linux-`, `windows-`).
 
 All other versions (opam, zlib, pcre2, mbedtls, neko sources, container images) and their checksums are in `versions.env`.
 
@@ -152,4 +242,4 @@ Deletes `haxe/`, `.cache/`, `build/` and the Docker volumes used for the Linux o
 - on pushes to `main` that change the build scripts;
 - manually (`workflow_dispatch`), with any repository, branch or commit, profile, and options to run tests and publish.
 
-A build is skipped when the release `haxe-<profile>-<commit>` already exists. macOS arm64 and x86_64 are built in separate jobs and combined into a universal binary. Linux uses the same Docker images as local builds.
+A build is skipped when the release `haxe-<profile>-<commit>` already exists. Each platform is built by the composite action `.github/actions/build-haxe`, the one a calling project uses (macOS universal on one arm64 runner, x86_64 under Rosetta). Linux uses the same Docker images as local builds.
