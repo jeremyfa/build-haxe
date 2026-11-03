@@ -133,14 +133,17 @@ download() {
         return
     fi
     log "downloading $url" >&2
-    curl -fsSL --retry 5 --retry-delay 2 -o "$file.part" "$url"
+    # The temporary name is unique per process: builds running in parallel
+    # (macOS and Docker) share .cache/downloads.
+    local part="$file.part.$$"
+    curl -fsSL --retry 5 --retry-delay 2 -o "$part" "$url"
     local got
-    got="$(sha256_of "$file.part")"
+    got="$(sha256_of "$part")"
     if [ "$got" != "$sha" ]; then
-        rm -f "$file.part"
+        rm -f "$part"
         die "checksum mismatch for $url: expected $sha, got $got"
     fi
-    mv "$file.part" "$file"
+    mv -f "$part" "$file"
     echo "$file"
 }
 

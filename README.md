@@ -95,7 +95,7 @@ The clone lives in `haxe/`. To build from another repository, run `./clean-haxe.
 
 ## neko and haxelib
 
-neko is compiled from pinned sources by `scripts/build-neko.sh`, the same way neko's own CI does it (`cmake -DSTATIC_DEPS=all`, then its `package` target). Its dependencies (Boehm GC, zlib, mbedtls, pcre2, sqlite, MariaDB connector, OpenSSL) are downloaded by neko's CMake, checked against the sha256 it pins, and linked statically. Each profile picks its neko source in `profile.env`:
+neko is compiled from pinned sources by `scripts/build-neko.sh`, the same way neko's own CI does it (`cmake -DSTATIC_DEPS=all`, then its `package` target). Its dependencies (Boehm GC, zlib, mbedtls, pcre2, sqlite, MariaDB connector, OpenSSL) are linked statically. They are prefetched into `.cache/downloads` and checked against the sha256 that neko's CMake pins, with mirrors for the hosts that are often down (`archive.mariadb.org`, the OpenSSL GitHub releases). Each profile picks its neko source in `profile.env`:
 
 - `haxe5`: neko master (`NEKO_MASTER_COMMIT`). The neko output of Haxe 5 uses primitives that no neko release has yet (2.4.1 is from April 2025).
 - `haxe43`: the 2.4.1 release (`NEKO_RELEASE_COMMIT`).

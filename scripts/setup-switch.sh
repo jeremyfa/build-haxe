@@ -27,8 +27,8 @@ opam_repo_snapshot() {
         local tgz="$ROOT/.cache/downloads/opam-repository-$OPAM_REPO_COMMIT.tar.gz"
         if [ ! -f "$tgz" ]; then
             log "downloading opam-repository $OPAM_REPO_COMMIT" >&2
-            curl -fsSL --retry 5 -o "$tgz.part" "https://github.com/ocaml/opam-repository/archive/$OPAM_REPO_COMMIT.tar.gz"
-            mv "$tgz.part" "$tgz"
+            curl -fsSL --retry 5 -o "$tgz.part.$$" "https://github.com/ocaml/opam-repository/archive/$OPAM_REPO_COMMIT.tar.gz"
+            mv -f "$tgz.part.$$" "$tgz"
         fi
         log "extracting opam-repository snapshot" >&2
         mkdir -p "$dir.extract"

@@ -88,6 +88,49 @@ fi
 build="$work/build"
 mkdir -p "$build"
 
+# Prefetch the dependencies pinned in neko's CMakeLists (URL + URL_HASH) into
+# .cache/downloads, trying mirrors when the original host is down, and place
+# them where neko's ExternalProject looks first (it then skips the download).
+mirrors_for() {
+    local url="$1"
+    echo "$url"
+    case "$url" in
+        https://downloads.mariadb.com/Connectors/c/*)
+            echo "https://archive.mariadb.org/${url#https://downloads.mariadb.com/Connectors/c/}" ;;
+        https://www.openssl.org/source/openssl-*.tar.gz)
+            local f v
+            f="$(basename "$url")"; v="${f%.tar.gz}"
+            echo "https://github.com/openssl/openssl/releases/download/$v/$f" ;;
+    esac
+}
+prefetch_deps() {
+    local dl="$build/libs/download" url sha file cached candidate got
+    mkdir -p "$dl" "$ROOT/.cache/downloads"
+    awk '/^[ \t]*URL[ \t]+https?:/{u=$2} /URL_HASH[ \t]+SHA256=/{sub(/.*SHA256=/,""); if(u!=""){print u, $1; u=""}}' \
+        "$src/CMakeLists.txt" "$src"/libs/*/CMakeLists.txt |
+    while read -r url sha; do
+        file="$(basename "$url")"
+        cached="$ROOT/.cache/downloads/$file"
+        if [ ! -f "$cached" ] || [ "$(sha256_of "$cached")" != "$sha" ]; then
+            for candidate in $(mirrors_for "$url"); do
+                log "downloading $candidate"
+                # Unique temporary name: parallel builds share .cache/downloads.
+                if curl -fsSL --retry 3 --retry-delay 2 --max-time 600 -o "$cached.part.$$" "$candidate"; then
+                    got="$(sha256_of "$cached.part.$$")"
+                    if [ "$got" = "$sha" ]; then mv -f "$cached.part.$$" "$cached"; break; fi
+                    warn "checksum mismatch for $candidate (got $got)"
+                fi
+            done
+        fi
+        if [ -f "$cached" ] && [ "$(sha256_of "$cached")" = "$sha" ]; then
+            cp -f "$cached" "$dl/$file"
+        else
+            warn "could not prefetch $file, neko's CMake will try $url itself"
+        fi
+    done
+}
+prefetch_deps
+
 cmake_args=(-DCMAKE_BUILD_TYPE=Release -DSTATIC_DEPS=all -DRELOCATABLE=ON
     -DWITH_UI=OFF -DWITH_APACHE=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
