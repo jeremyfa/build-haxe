@@ -33,8 +33,9 @@ if [ "$layout" = "--ceramic-layout" ]; then
     mv "$src/haxe/neko" "$src/neko"
     case "$os" in
         mac)
-            install_name_tool -rpath @executable_path/neko @executable_path/../neko "$src/haxe/haxelib"
-            codesign --force --sign "${SIGN_IDENTITY:--}" "$src/haxe/haxelib"
+            # Changing the rpath invalidates the signature: sign again.
+            install_name_tool -rpath @executable_path/neko @executable_path/../neko "$src/haxe/haxelib" 2>/dev/null
+            msg="$(codesign --force --sign "${SIGN_IDENTITY:--}" "$src/haxe/haxelib" 2>&1)" || die "codesign failed: $msg"
             ;;
         linux)
             patchelf --set-rpath '$ORIGIN/../neko' "$src/haxe/haxelib"

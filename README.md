@@ -107,10 +107,10 @@ All other versions (opam, zlib, pcre2, mbedtls, neko, container images) and thei
 
 ```bash
 ./test-haxe.sh mac-universal              # default suites of the profile
-./test-haxe.sh linux-arm64 macro          # runs in the glibc build image
+./test-haxe.sh linux-arm64 macro          # runs in docker/linux-test.Dockerfile
 ```
 
-Default suites: `macro` for `haxe5`, `macro,neko` for `haxe43`. Tests run on a fresh copy of the clone in `build/test-work/` (inside the container for Linux). Other RunCi targets (`js`, `hl`, `cpp`, `jvm`, `python`, `php`, `lua`) can be listed too, but need their own toolchain installed.
+Default suites: `macro` for `haxe5`, `macro,neko` for `haxe43`. Tests run on a fresh copy of the clone in `build/test-work/` (inside the container for Linux). A few macro tests call node, python3 or Java: the Linux test image has them, on macOS they must be installed. Other RunCi targets (`js`, `hl`, `cpp`, `jvm`, `python`, `php`, `lua`) can be listed too, but need their own toolchain installed.
 
 ## Known limits
 

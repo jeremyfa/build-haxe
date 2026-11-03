@@ -29,7 +29,7 @@ La première version de ce document s'appuyait sur des clones locaux qui ne corr
 | `run.n` de haxelib | Fichier suivi par git dans le sous-module, réécrit par chaque build | Restauré après le build de haxelib et avant tout changement de commit |
 | Tests dans le clone | Certains tests écrivent dans l'arbre et ne supportent pas d'être relancés (Issue12873) | `test-haxe.sh` travaille sur une copie des fichiers suivis par git |
 | Tests neko de Haxe 5 avec neko 2.4.1 | La std de development utilise des primitives neko de 2026 (`std@lock_create`...), absentes de toute release | Profil haxe5 : tests par défaut `macro`. Le CI officiel utilise un neko nightly (build.haxe.org) ; choix laissé ouvert, voir README |
-| Quelques tests macro | Trois tests du groupe `resolution` exécutent node | `nodejs` dans l'image glibc |
+| Quelques tests macro | Des tests appellent node (`resolution`), python3 (`TestUnicode`) ou Java (`Issue11737` sur 4.3) | Image de test `docker/linux-test.Dockerfile` avec nodejs, python3 et un JDK |
 | haxe43 sur OCaml 5.3.0 | luv 0.5.13 ne compile pas avec ctypes >= 0.22 et un clang récent ; ctypes 0.21.1 exige OCaml < 5.2 | Profil haxe43 : OCaml 5.1.1 et `OPAM_PINS="ctypes.0.21.1"`, comme le CI officiel de 4.3 |
 | mbedtls 2.28 et CMake 4 | `cmake_minimum_required` trop ancien | `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` |
 | Racine opam par profil et cible | Changer de version d'OCaml demanderait de supprimer la racine (et une racine opam n'est pas déplaçable) | Racine par profil, cible et version d'OCaml |
@@ -196,7 +196,8 @@ build-haxe/
   test-haxe.sh
   clean-haxe.sh
   docker/linux.Dockerfile       # Alpine : haxe statique
-  docker/linux-glibc.Dockerfile # Debian 11 : haxelib, assemblage, tests
+  docker/linux-glibc.Dockerfile # glibc (Debian 11 x64, Ubuntu 22.04 arm64) : haxelib, assemblage, vérifications
+  docker/linux-test.Dockerfile  # image glibc + node, python3, JDK pour les tests
   .github/workflows/build-haxe.yml
 ```
 

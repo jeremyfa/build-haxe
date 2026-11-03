@@ -1,6 +1,6 @@
 # glibc image used to link haxelib against the official neko release,
-# assemble and verify the Linux folder, and run the tests (nodejs is used by
-# a few macro tests).
+# assemble and verify the Linux folder. docker/linux-test.Dockerfile adds the
+# tools needed by the tests.
 # Its glibc sets the minimum glibc of haxelib, so the oldest base that the
 # neko release accepts is used (see GLIBC_IMAGE_* in versions.env):
 #   x64:   Debian 11 (glibc 2.31), neko needs 2.29. Debian 11 is out of
@@ -19,7 +19,7 @@ RUN if [ -n "${DEBIAN_SNAPSHOT}" ]; then \
     fi \
     && apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=5 update \
     && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
-        bash gcc libc6-dev ca-certificates curl git file binutils patchelf zip unzip nodejs \
+        bash gcc libc6-dev ca-certificates curl git file binutils patchelf zip unzip \
     && git config --system --add safe.directory '*'
 
 ENV BUILD_HAXE_IN_CONTAINER=1

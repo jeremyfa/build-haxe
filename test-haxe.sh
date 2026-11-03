@@ -6,7 +6,7 @@
 #   jvm, python, php, lua...). Anything beyond macro and neko needs that
 #   target's own toolchain on the machine.
 #
-# Linux targets run inside the glibc build image (Docker).
+# Linux targets run inside the test image (docker/linux-test.Dockerfile).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/scripts/common.sh"
@@ -35,8 +35,10 @@ if [ "$os" = "linux" ] && ! in_container; then
     glibc_snapshot_var="GLIBC_SNAPSHOT_$arch_arg"; glibc_snapshot="${!glibc_snapshot_var}"
     docker build -q --platform "$platform" --build-arg BASE_IMAGE="$glibc_image" --build-arg DEBIAN_SNAPSHOT="$glibc_snapshot" \
         -t "build-haxe-glibc:$arch_arg" -f "$ROOT/docker/linux-glibc.Dockerfile" "$ROOT/docker" >/dev/null
+    docker build -q --platform "$platform" --build-arg GLIBC_TAG="build-haxe-glibc:$arch_arg" \
+        -t "build-haxe-test:$arch_arg" -f "$ROOT/docker/linux-test.Dockerfile" "$ROOT/docker" >/dev/null
     exec docker run --rm --platform "$platform" -v "$ROOT:/workspace" -w /workspace \
-        "build-haxe-glibc:$arch_arg" ./test-haxe.sh "$target" "$tests"
+        "build-haxe-test:$arch_arg" ./test-haxe.sh "$target" "$tests"
 fi
 
 # RunCi writes into $HOME/haxe-ci (tests/runci/System.hx) and installs
