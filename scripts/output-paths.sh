@@ -22,6 +22,19 @@ load_profile
 topath() {
     if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi
 }
+# A universal build compiles mac-arm64 and mac-x86_64 in their stages but
+# only assembles mac-universal, which runs on both: point to it then.
+case "$target" in
+    mac-arm64|mac-x86_64)
+        if [ ! -d "$(layout_folder "$target" "$layout")" ] \
+            && [ -f "$(stage_dir mac-universal)/build_id.txt" ] \
+            && [ "$(stage_build_id mac-universal)" = "$(stage_build_id "$target")" ] \
+            && [ -d "$(layout_folder mac-universal "$layout")" ]; then
+            echo "[build-haxe] $target was built as part of mac-universal, which runs on both architectures" >&2
+            target=mac-universal
+        fi
+        ;;
+esac
 archive="$(layout_archive "$target" "$layout")"
 echo "FOLDER=$(topath "$(layout_folder "$target" "$layout")")"
 echo "ARCHIVE=$(topath "$archive")"
