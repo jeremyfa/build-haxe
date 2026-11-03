@@ -116,6 +116,15 @@ sha256_of() {
     fi
 }
 
+# Replace a file with a copy of another one through a new inode. Overwriting
+# an executable in place makes macOS kill it on the next launch (its cached
+# code signature no longer matches).
+replace_file() {
+    local src="$1" dst="$2"
+    cp -f "$src" "$dst.tmp.$$"
+    mv -f "$dst.tmp.$$" "$dst"
+}
+
 # download URL SHA256 -> prints the path of the verified file in .cache/downloads
 download() {
     local url="$1" sha="$2"

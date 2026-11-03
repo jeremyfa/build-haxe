@@ -44,13 +44,15 @@ case "$os" in
         nekotools boot -c run.n
         # One universal binary linked against the universal libneko. libneko
         # itself requires macOS 11.0, so haxelib uses the same minimum.
-        cc -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 run.c -o "$stage/haxelib" \
+        cc -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 run.c -o "$stage/haxelib.new" \
             -I"$neko/include" -L"$neko" -lneko -Wl,-rpath,@executable_path/neko
+        mv -f "$stage/haxelib.new" "$stage/haxelib"
         ;;
     linux)
         nekotools boot -c run.n
-        gcc -O2 run.c -o "$stage/haxelib" -I"$neko/include" -L"$neko" -lneko \
+        gcc -O2 run.c -o "$stage/haxelib.new" -I"$neko/include" -L"$neko" -lneko \
             -Wl,-rpath,'$ORIGIN/neko'
+        mv -f "$stage/haxelib.new" "$stage/haxelib"
         ;;
     windows)
         nekotools boot run.n

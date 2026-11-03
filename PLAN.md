@@ -33,6 +33,8 @@ La première version de ce document s'appuyait sur des clones locaux qui ne corr
 | haxe43 sur OCaml 5.3.0 | luv 0.5.13 ne compile pas avec ctypes >= 0.22 et un clang récent ; ctypes 0.21.1 exige OCaml < 5.2 | Profil haxe43 : OCaml 5.1.1 et `OPAM_PINS="ctypes.0.21.1"`, comme le CI officiel de 4.3 |
 | mbedtls 2.28 et CMake 4 | `cmake_minimum_required` trop ancien | `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` |
 | Racine opam par profil et cible | Changer de version d'OCaml demanderait de supprimer la racine (et une racine opam n'est pas déplaçable) | Racine par profil, cible et version d'OCaml |
+| Copie d'exécutables avec `cp` | Écraser un exécutable sur place (même inode) fait tuer le binaire par macOS au lancement suivant (signature en cache) | `replace_file` : copie temporaire puis `mv`, pour opam, haxe, haxelib et neko |
+| Passer d'une branche à l'autre dans le même clone | Le build 4.3 laisse `lib.sexp` et `src/compiler/version.ml` (ignorés par git), qui entrent en conflit avec les règles dune de development | `build-core.sh` les supprime avant un build haxe5 |
 
 ## 1. Objectif
 

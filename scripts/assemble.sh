@@ -28,7 +28,9 @@ done
 [ "$(cat "$stage/commit.txt")" = "$(haxe_commit)" ] || die "stage was built from $(cat "$stage/commit.txt"), haxe/ is at $(haxe_commit)"
 
 mkdir -p "$out"
-cp -f "$stage/haxe$exe" "$stage/haxelib$exe" "$stage/commit.txt" "$stage/build_info.txt" "$out/"
+for f in "haxe$exe" "haxelib$exe" commit.txt build_info.txt; do
+    replace_file "$stage/$f" "$out/$f"
+done
 for f in CHANGES.txt CONTRIB.txt LICENSE.txt; do
     if [ -f "$HAXE_DIR/extra/$f" ]; then cp -f "$HAXE_DIR/extra/$f" "$out/"; fi
 done
@@ -46,7 +48,11 @@ for f in "$neko"/*; do
     case "$(basename "$f")" in
         include|CMake|README.md|.version|*.lib) continue ;;
     esac
-    cp -R -P "$f" "$nekodest/"
+    if [ -f "$f" ] && [ ! -L "$f" ]; then
+        replace_file "$f" "$nekodest/$(basename "$f")"
+    else
+        cp -R -P "$f" "$nekodest/"
+    fi
 done
 if [ "$os" != "windows" ]; then
     mv -f "$nekodest/LICENSE" "$nekodest/LICENSE.txt" 2>/dev/null || true

@@ -63,7 +63,8 @@ fi
 if [ "$what" = "universal" ]; then
     stage="$(stage_dir mac-universal)"
     mkdir -p "$stage"
-    lipo -create -output "$stage/haxe" "$(stage_dir mac-arm64)/haxe" "$(stage_dir mac-x86_64)/haxe"
+    lipo -create -output "$stage/haxe.new" "$(stage_dir mac-arm64)/haxe" "$(stage_dir mac-x86_64)/haxe"
+    mv -f "$stage/haxe.new" "$stage/haxe"
     cp -f "$(stage_dir mac-arm64)/commit.txt" "$stage/commit.txt"
     {
         echo "== arm64"
