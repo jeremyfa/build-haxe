@@ -58,4 +58,9 @@ case "$os" in
         ;;
 esac
 
+# run.n is tracked in the haxelib repository: restore it so the submodule
+# stays clean and can move to another commit.
+git -C "$src" checkout -- run.n 2>/dev/null || true
+rm -f run.c
+
 log "haxelib built: $stage/haxelib$exe"

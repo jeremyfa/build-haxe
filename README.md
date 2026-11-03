@@ -90,7 +90,7 @@ The clone lives in `haxe/`. To build from another repository, run `./clean-haxe.
 The two maintained Haxe branches need different OCaml dependencies. A profile is a folder in `profiles/`:
 
 - `haxe5` for `development`: OCaml 5.3.0, mbedtls 3.6, ppx_parser.
-- `haxe43` for `4.3_bugfix`: OCaml 5.3.0, mbedtls 2.28, camlp5.
+- `haxe43` for `4.3_bugfix`: OCaml 5.1.1, mbedtls 2.28, camlp5, ctypes pinned to 0.21.1 (luv 0.5.13 does not build with newer ctypes, like on the official 4.3 CI).
 
 The profile is detected from `haxe/haxe.opam`. Each profile has a `haxe.opam.locked` with the exact version of every opam package, resolved against a pinned snapshot of opam-repository (`OPAM_REPO_COMMIT` in `versions.env`). To update them:
 
@@ -99,24 +99,25 @@ HAXE_PROFILE=haxe5 scripts/update-locks.sh mac-arm64
 HAXE_BRANCH=4.3_bugfix ./setup-haxe.sh && HAXE_PROFILE=haxe43 scripts/update-locks.sh mac-arm64
 ```
 
-`profiles/<profile>/patches/` can hold patches applied to the Haxe sources during the build and reverted afterwards. The file name prefix selects the platform (`all-`, `mac-`, `linux-`, `windows-`).
+Each OCaml version gets its own opam root (`.cache/opam/<profile>-<target>-ocaml<version>`), so changing it never reuses an old one. `profiles/<profile>/patches/` can hold patches applied to the Haxe sources during the build and reverted afterwards. The file name prefix selects the platform (`all-`, `mac-`, `linux-`, `windows-`).
 
 All other versions (opam, zlib, pcre2, mbedtls, neko, container images) and their checksums are in `versions.env`.
 
 ## Running tests
 
 ```bash
-./test-haxe.sh mac-universal              # macro and neko test suites
-./test-haxe.sh linux-arm64 macro,neko     # runs in the Debian build image
+./test-haxe.sh mac-universal              # default suites of the profile
+./test-haxe.sh linux-arm64 macro          # runs in the glibc build image
 ```
 
-Other RunCi targets (`js`, `hl`, `cpp`, `jvm`, `python`, `php`, `lua`) can be listed too, but need their own toolchain installed.
+Default suites: `macro` for `haxe5`, `macro,neko` for `haxe43`. Tests run on a fresh copy of the clone in `build/test-work/` (inside the container for Linux). Other RunCi targets (`js`, `hl`, `cpp`, `jvm`, `python`, `php`, `lua`) can be listed too, but need their own toolchain installed.
 
 ## Known limits
 
 - x86_64 macOS builds run the toolchain under Rosetta. Apple announced that its developer tools may stop being universal from version 27, which would break this. `scripts/check-host.sh` warns when the SDK reaches 27.
 - `haxelib` on Linux needs glibc (the official neko release is not built for musl). `haxe` itself runs everywhere.
 - Windows binaries are built on GitHub Actions or on a Windows machine. Cross-compiling them from a Mac is not supported.
+- The neko target of Haxe 5 (`development`) uses neko primitives added in 2026 that no neko release has yet (2.4.1 is from April 2025). The archives ship neko 2.4.1, which is enough for haxelib, and the `haxe5` profile only runs the `macro` tests by default. Running Haxe 5 neko output needs a neko built from its master branch (the official Haxe CI uses the nightlies of build.haxe.org).
 
 ## Cleaning up
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the Haxe test suite (tests/RunCi.hxml) with a built folder.
-# Usage: ./test-haxe.sh <target> [test targets]   (default: macro,neko)
+# Usage: ./test-haxe.sh <target> [test targets]   (default: DEFAULT_TEST_TARGETS of the profile)
 #   target: mac-universal, mac-arm64, mac-x86_64, linux-x64, linux-arm64, windows-x64
 #   test targets: comma separated RunCi targets (macro, neko, js, hl, cpp,
 #   jvm, python, php, lua...). Anything beyond macro and neko needs that
@@ -12,13 +12,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/scripts/common.sh"
 
 target="${1:?usage: test-haxe.sh <target> [test targets]}"
-tests="${2:-macro,neko}"
 check_target "$target"
 os="$(target_os "$target")"
 
 HAXE_PROFILE="$("$ROOT/scripts/detect-profile.sh")"
 export HAXE_PROFILE
 load_profile
+tests="${2:-$DEFAULT_TEST_TARGETS}"
 
 short="$(cut -c1-10 "$(stage_dir "$target")/commit.txt" 2>/dev/null)" || die "no build for $target (run the build script first)"
 out="$ROOT/build/$HAXE_PROFILE/$target/$short/haxe"
@@ -55,21 +55,26 @@ else
 fi
 unset DYLD_LIBRARY_PATH LD_LIBRARY_PATH
 
-# Some file names in tests/sys/compile-fs.hxml are not valid on APFS.
-restore_fs_hxml=0
-if [ "$os" = "mac" ] && [ -f "$HAXE_DIR/tests/sys/compile-fs.hxml" ]; then
-    : > "$HAXE_DIR/tests/sys/compile-fs.hxml"
-    restore_fs_hxml=1
+# Tests write into the source tree (compiled outputs, local haxelib repos)
+# and some of them cannot run twice. Run them in a fresh copy of the tracked
+# files of the clone.
+if in_container; then
+    work="$(mktemp -d /tmp/haxe-tests.XXXXXX)"
+else
+    mkdir -p "$ROOT/build/test-work"
+    work="$(mktemp -d "$ROOT/build/test-work/$HAXE_PROFILE-$target.XXXXXX")"
 fi
-cleanup() {
-    if [ "$restore_fs_hxml" = "1" ]; then
-        git -C "$HAXE_DIR" checkout -- tests/sys/compile-fs.hxml
-    fi
-}
-trap cleanup EXIT
+log "copying tracked sources to $work"
+git -C "$HAXE_DIR" ls-files -z --recurse-submodules \
+    | tar -C "$HAXE_DIR" --null -T - -cf - | tar -C "$work" -xf -
+
+# Some file names in tests/sys/compile-fs.hxml are not valid on APFS.
+if [ "$os" = "mac" ] && [ -f "$work/tests/sys/compile-fs.hxml" ]; then
+    : > "$work/tests/sys/compile-fs.hxml"
+fi
 
 log "haxe: $(haxe --version), haxelib: $(haxelib version 2>/dev/null || echo '?')"
 log "running RunCi ($tests) for $HAXE_PROFILE/$target"
-cd "$HAXE_DIR/tests"
+cd "$work/tests"
 TEST="$tests" haxe RunCi.hxml
 log "tests passed: $tests"

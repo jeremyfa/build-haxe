@@ -56,6 +56,15 @@ fi
 
 record_env "$ROOT/build/$HAXE_PROFILE/$target/switch_env.txt"
 
+for pin in ${OPAM_PINS:-}; do
+    name="${pin%%.*}"
+    version="${pin#*.}"
+    if [ "$("$opam" pin list --short 2>/dev/null | grep -x "$name.$version" || true)" = "" ]; then
+        log "pinning $name to $version"
+        "$opam" pin add --no-action "$name" "$version"
+    fi
+done
+
 if [ "$mode" = "--unlocked" ]; then
     log "installing Haxe dependencies (unlocked resolution)"
     rm -f "$HAXE_DIR/haxe.opam.locked"

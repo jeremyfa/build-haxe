@@ -18,12 +18,23 @@ sanitize_env "$target"
 opam="$(opam_bin "$target")"
 lock="$ROOT/profiles/$HAXE_PROFILE/haxe.opam.locked"
 
-(cd "$HAXE_DIR" && "$opam" lock . --lock-suffix=locked)
-[ -f "$HAXE_DIR/haxe.opam.locked" ] || die "opam lock did not produce haxe/haxe.opam.locked"
-
-# Drop the packages that only describe the host platform, so the same lock
+# The switch only contains Haxe's dependencies, so its installed packages are
+# exactly the dependency closure. The lock is generated from that list rather
+# than with `opam lock`, which cannot handle the dependency formula of
+# 4.3_bugfix (a disjunction between OCaml 5 and OCaml 4 setups).
+# Packages that only describe the host platform are dropped, so the same lock
 # works on every OS and architecture.
-grep -v -E '"(host-arch-[a-z0-9_]+|host-system-[a-z0-9_]+|arch-[a-z0-9_]+|system-mingw|ocaml-env-mingw[0-9]*|flexdll|conf-mingw-w64-[a-z0-9_-]+|ocaml-option-[a-z0-9_-]+)"' \
-    "$HAXE_DIR/haxe.opam.locked" > "$lock"
-rm -f "$HAXE_DIR/haxe.opam.locked"
+platform_re='^(host-arch-|host-system-|arch-|system-mingw$|ocaml-env-mingw|flexdll$|conf-mingw-w64-|ocaml-option-)'
+deps="$("$opam" list --installed --short --columns=name,version | awk '{print $1, $2}' \
+    | grep -v -E "$platform_re" | sort)"
+[ -n "$deps" ] || die "no installed packages found in the switch"
+
+{
+    awk '/^depends: *\[/ {skip=1; next} skip && /^\]/ {skip=0; next} !skip' "$HAXE_DIR/haxe.opam"
+    echo "depends: ["
+    echo "$deps" | while read -r name version; do
+        echo "  \"$name\" {= \"$version\"}"
+    done
+    echo "]"
+} > "$lock"
 log "lock written: $lock"

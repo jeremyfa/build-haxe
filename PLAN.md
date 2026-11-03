@@ -24,6 +24,15 @@ La première version de ce document s'appuyait sur des clones locaux qui ne corr
 | `build-haxe-windows.ps1` | opam sous Windows passe de toute façon par Cygwin | `build-haxe-windows.sh` lancé dans le bash Cygwin de setup-ocaml, avec le même `common.sh` |
 | libneko mac minos 11.0 | Le neko officiel exige macOS 11.0 sur les deux arches | haxelib : minos 11.0 ; haxe x86_64 garde 10.13 |
 | Lock opam unique | Les paquets virtuels de plateforme (`host-arch-*`, `host-system-*`) diffèrent selon l'hôte | `update-locks.sh` les retire ; sous Windows, les épinglages du compilateur sont retirés (il vient de setup-ocaml) |
+| Image glibc unique Debian 11 pour haxelib | Le neko officiel exige glibc 2.29 (x64) mais 2.34 (arm64) | x64 : Debian 11 (glibc 2.31) ; arm64 : Ubuntu 22.04 (glibc 2.35). Variables `GLIBC_IMAGE_*` dans `versions.env` |
+| Clone bind-monté dans Docker | Le système de fichiers macOS est insensible à la casse, dune sous Linux échoue parfois | Le build Linux compile depuis une copie des sources dans le conteneur (`BUILD_HAXE_COPY_SOURCES=1`) |
+| `run.n` de haxelib | Fichier suivi par git dans le sous-module, réécrit par chaque build | Restauré après le build de haxelib et avant tout changement de commit |
+| Tests dans le clone | Certains tests écrivent dans l'arbre et ne supportent pas d'être relancés (Issue12873) | `test-haxe.sh` travaille sur une copie des fichiers suivis par git |
+| Tests neko de Haxe 5 avec neko 2.4.1 | La std de development utilise des primitives neko de 2026 (`std@lock_create`...), absentes de toute release | Profil haxe5 : tests par défaut `macro`. Le CI officiel utilise un neko nightly (build.haxe.org) ; choix laissé ouvert, voir README |
+| Quelques tests macro | Trois tests du groupe `resolution` exécutent node | `nodejs` dans l'image glibc |
+| haxe43 sur OCaml 5.3.0 | luv 0.5.13 ne compile pas avec ctypes >= 0.22 et un clang récent ; ctypes 0.21.1 exige OCaml < 5.2 | Profil haxe43 : OCaml 5.1.1 et `OPAM_PINS="ctypes.0.21.1"`, comme le CI officiel de 4.3 |
+| mbedtls 2.28 et CMake 4 | `cmake_minimum_required` trop ancien | `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` |
+| Racine opam par profil et cible | Changer de version d'OCaml demanderait de supprimer la racine (et une racine opam n'est pas déplaçable) | Racine par profil, cible et version d'OCaml |
 
 ## 1. Objectif
 

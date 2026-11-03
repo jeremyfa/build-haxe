@@ -22,9 +22,10 @@ if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$want" ]; then
     log "C dependencies for $HAXE_PROFILE/$target already built ($want)"
     exit 0
 fi
-if [ -e "$prefix" ]; then
-    die "$prefix exists but does not match ($want). Remove it (or run ./clean-haxe.sh) and retry."
+if [ -f "$stamp" ]; then
+    die "$prefix was built with other versions ($(cat "$stamp")). Remove it (or run ./clean-haxe.sh) and retry."
 fi
+# A prefix without stamp is an interrupted build: it is completed in place.
 
 mkdir -p "$prefix/include" "$prefix/lib/pkgconfig" "$work"
 
@@ -45,7 +46,8 @@ extract() {
 CFLAGS_EXTRA="-O2 -fPIC"
 CMAKE_COMMON=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=OFF
-    -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF)
+    -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 if [ "$os" = "mac" ]; then
     CFLAGS_EXTRA="$CFLAGS_EXTRA -arch $arch -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
     CMAKE_COMMON+=(-DCMAKE_OSX_ARCHITECTURES="$arch" -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"

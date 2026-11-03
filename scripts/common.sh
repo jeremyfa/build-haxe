@@ -70,11 +70,14 @@ load_profile() {
 # Paths, all inside the project directory
 deps_prefix() { echo "$ROOT/build/deps/$HAXE_PROFILE/$1"; }
 deps_work() { echo "$ROOT/build/deps-work/$1"; }
+# One opam root per profile, target and OCaml version, so changing the
+# compiler never reuses (or needs to delete) an existing root.
 opam_root() {
+    local name="$HAXE_PROFILE-$1-ocaml$OCAML_VERSION"
     if [ -n "${BUILD_HAXE_OPAMROOT_BASE:-}" ]; then
-        echo "$BUILD_HAXE_OPAMROOT_BASE/$HAXE_PROFILE-$1"
+        echo "$BUILD_HAXE_OPAMROOT_BASE/$name"
     else
-        echo "$ROOT/.cache/opam/$HAXE_PROFILE-$1"
+        echo "$ROOT/.cache/opam/$name"
     fi
 }
 stage_dir() { echo "$ROOT/build/$HAXE_PROFILE/$1/stage"; }
@@ -181,6 +184,9 @@ sanitize_env() {
             root="$(opam_root "$target")"
             hostbin="$(prepare_hostbin)"
             export OPAMROOT="$root" OPAMSWITCH=build
+            # Bytecode tools such as camlp5o load their C stubs from here
+            # (opam env would set it).
+            export CAML_LD_LIBRARY_PATH="$root/build/lib/stublibs:$root/build/lib/ocaml/stublibs"
             export PATH="$root/build/bin:$neko:$(dirname "$(opam_bin "$target")"):$hostbin:/usr/bin:/bin:/usr/sbin:/sbin"
             export MACOSX_DEPLOYMENT_TARGET
             eval "MACOSX_DEPLOYMENT_TARGET=\${MACOS_MIN_$arch}"
@@ -189,6 +195,9 @@ sanitize_env() {
         linux)
             root="$(opam_root "$target")"
             export OPAMROOT="$root" OPAMSWITCH=build
+            # Bytecode tools such as camlp5o load their C stubs from here
+            # (opam env would set it).
+            export CAML_LD_LIBRARY_PATH="$root/build/lib/stublibs:$root/build/lib/ocaml/stublibs"
             export PATH="$root/build/bin:$neko:$(dirname "$(opam_bin "$target")"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             export LD_LIBRARY_PATH="$neko"
             ;;
