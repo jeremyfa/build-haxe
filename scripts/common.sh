@@ -268,33 +268,43 @@ haxe_short() { load_source_info; echo "$SRC_SHORT"; }
 # repository. -f keeps both BSD patch (macOS) and GNU patch from asking or
 # guessing: without it, BSD patch answers its own "Reversed patch detected!
 # Ignore -R?" question and reports an unapplied patch as present.
+# Patch tool: GNU or BSD patch, except on Windows where the patch found in
+# the PATH can be an old native build (Strawberry Perl's patch 2.5.9 crashes
+# on our patches): git apply there, given a Windows path.
+use_git_apply() {
+    [ "$HOST_OS" = "windows" ] || ! command -v patch >/dev/null 2>&1
+}
+patch_path() {
+    if [ "$HOST_OS" = "windows" ]; then cygpath -m "$1"; else echo "$1"; fi
+}
+
 # revert_patch <dir> <patch>: undo a patch applied by apply_patch_once.
 revert_patch() {
-    if command -v patch >/dev/null 2>&1; then
-        (cd "$1" && patch -p1 -R -f -s < "$2")
+    if use_git_apply; then
+        (cd "$1" && git apply -R "$(patch_path "$2")")
     else
-        (cd "$1" && git apply -R "$2")
+        (cd "$1" && patch -p1 -R -f -s < "$2")
     fi
 }
 
 apply_patch_once() {
     local dir="$1" p="$2" out
-    if command -v patch >/dev/null 2>&1; then
-        if (cd "$dir" && patch -p1 -R -f -s --dry-run < "$p" >/dev/null 2>&1); then
+    if use_git_apply; then
+        local gp
+        gp="$(patch_path "$p")"
+        if (cd "$dir" && git apply -R --check "$gp" >/dev/null 2>&1); then
             echo "already applied"
-        elif out="$(cd "$dir" && patch -p1 -f -s --dry-run < "$p" 2>&1)"; then
-            (cd "$dir" && patch -p1 -f -s < "$p") >/dev/null
+        elif out="$(cd "$dir" && git apply --check "$gp" 2>&1)"; then
+            (cd "$dir" && git apply "$gp")
             echo "applied"
         else
             die "$(basename "$p") does not apply to $dir: $out"
         fi
     else
-        # No patch command (the minimal Cygwin of opam on Windows): git apply
-        # works on any folder.
-        if (cd "$dir" && git apply -R --check "$p" >/dev/null 2>&1); then
+        if (cd "$dir" && patch -p1 -R -f -s --dry-run < "$p" >/dev/null 2>&1); then
             echo "already applied"
-        elif out="$(cd "$dir" && git apply --check "$p" 2>&1)"; then
-            (cd "$dir" && git apply "$p")
+        elif out="$(cd "$dir" && patch -p1 -f -s --dry-run < "$p" 2>&1)"; then
+            (cd "$dir" && patch -p1 -f -s < "$p") >/dev/null
             echo "applied"
         else
             die "$(basename "$p") does not apply to $dir: $out"
