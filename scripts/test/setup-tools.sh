@@ -34,7 +34,8 @@ tools_for() {
     esac
 }
 
-needed=""
+# python3 for every target: the sys tests run gen_test_res.py.
+needed="python"
 for t in $(echo "$tests" | tr ',' ' '); do
     for tool in $(tools_for "$t"); do
         in_list "$tool" "$needed" || needed="$needed $tool"

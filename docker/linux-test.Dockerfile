@@ -13,8 +13,16 @@ RUN apt-get -o Acquire::Retries=5 update \
         libpng-dev libjpeg-turbo8-dev libturbojpeg0-dev zlib1g-dev libvorbis-dev \
         libsqlite3-dev libmbedtls-dev libuv1-dev \
         libpcre2-dev libssl-dev libreadline-dev libncurses-dev \
-        mono-devel mono-mcs \
     && git config --system --add safe.directory '*'
+
+# mono (cs target of 4.3). WITH_MONO=0 skips it: its installation fails in
+# an amd64 image emulated by Rosetta on macOS (test-haxe.sh sets it there;
+# GitHub runners build it natively).
+ARG WITH_MONO=1
+RUN if [ "$WITH_MONO" = 1 ]; then \
+        DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+            mono-devel mono-mcs; \
+    fi
 
 # UTF-8 locale, as on the official CI runners: the sys tests use file names
 # and arguments with non-ASCII characters, which Java (and others) encode with

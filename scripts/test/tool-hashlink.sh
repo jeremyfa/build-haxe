@@ -20,14 +20,16 @@ tools="$(test_tools_dir "$target")"
 platform="$(test_platform "$target")"
 src="$(git_dep_src HASHLINK)"
 id="${TEST_GIT_HASHLINK_COMMIT:0:12}"
-prefix="$tools/hashlink-$id"
-build="$tools/hashlink-build-$id"
+prefix="$tools/hashlink-$id-v2"
+build="$tools/hashlink-build-$id-v2"
 
 if [ ! -f "$prefix/.done" ]; then
     [ ! -e "$prefix" ] || mv "$prefix" "$prefix.old.$(date +%Y%m%d%H%M%S)"
     args=(-DBUILD_TESTING=OFF -DWITH_DIRECTX=OFF -DWITH_FMT=ON -DWITH_OPENAL=OFF -DWITH_SDL=OFF
         -DWITH_SQLITE=ON -DWITH_SSL=ON -DWITH_UI=OFF -DWITH_UV=OFF -DWITH_VIDEO=OFF
-        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
+        -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
+    # No CMAKE_BUILD_TYPE, like RunCi: an optimized build changes the call
+    # stacks that TestExceptions checks.
     case "$platform" in
         MAC_*) args+=(-G Ninja -DDOWNLOAD_DEPENDENCIES=ON) ;;
         LINUX_*) args+=(-G Ninja) ;;

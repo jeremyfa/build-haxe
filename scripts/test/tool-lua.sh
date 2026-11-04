@@ -20,34 +20,53 @@ tools="$(test_tools_dir "$target")"
 platform="$(test_platform "$target")"
 command -v python3 >/dev/null || die "python3 must be on the PATH (tool-python.sh)"
 
-venv="$tools/hererocks-$TEST_HEREROCKS_VERSION"
-wheels="$tools/pip-wheels-hererocks-$TEST_HEREROCKS_VERSION"
-if [ ! -f "$venv/.done" ]; then
-    [ ! -e "$venv" ] || mv "$venv" "$venv.old.$(date +%Y%m%d%H%M%S)"
-    wheel="$(test_file_any PIP_HEREROCKS)"
-    mkdir -p "$wheels"
-    cp -f "$wheel" "$wheels/"
-    wheel="$wheels/$(basename "$wheel")"
-    [ "$HOST_OS" = "windows" ] && wheel="$(cygpath -m "$wheel")"
-    python3 -m venv "$venv" >&2
-    if [ "$platform" = "WINDOWS_X64" ]; then
-        "$venv/Scripts/python.exe" -m pip install --no-index --no-deps "$wheel" >&2
-    else
-        "$venv/bin/python3" -m pip install --no-index --no-deps "$wheel" >&2
-    fi
-    # Only the hererocks command goes on the PATH, not the pip of the venv:
-    # RunCi 4.3 runs `pip install --user hererocks`, which a venv refuses.
-    mkdir -p "$venv/expose"
-    if [ "$platform" = "WINDOWS_X64" ]; then
-        cp -f "$venv/Scripts/hererocks.exe" "$venv/expose/"
-    else
-        ln -sf "$venv/bin/hererocks" "$venv/expose/hererocks"
-    fi
-    touch "$venv/.done"
+# hererocks from the pinned commit of its repository, run with the pinned
+# Python. Only this command goes on the PATH: RunCi 4.3 runs `pip install
+# --user hererocks`, which must reach the pip of that Python.
+src="$(git_dep_src HEREROCKS)"
+expose="$tools/hererocks-${TEST_GIT_HEREROCKS_COMMIT:0:12}"
+mkdir -p "$expose"
+python="$(command -v python3)"
+if [ "$platform" = "WINDOWS_X64" ]; then
+    printf '@"%s" "%s" %%*\r\n' "$(cygpath -w "$python")" "$(cygpath -w "$src/hererocks.py")" > "$expose/hererocks.cmd"
+    printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$python" "$src/hererocks.py" > "$expose/hererocks"
+else
+    printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$python" "$src/hererocks.py" > "$expose/hererocks"
 fi
-[ "$platform" = "WINDOWS_X64" ] || "$venv/expose/hererocks" --version >&2
-echo "path:$venv/expose"
-# Any `pip install hererocks` (RunCi 4.3) gets the pinned wheel, offline.
+chmod +x "$expose/hererocks"
+"$expose/hererocks" --version >&2
+echo "path:$expose"
+
+# RunCi 4.3 runs `pip install --user hererocks`: pip finds (PIP_FIND_LINKS,
+# offline) a wheel made here from the same pinned commit. A wheel is a zip of
+# the module and its metadata; it comes from checked sources, so it needs no
+# pinned sha256 of its own.
+wheels="$tools/pip-wheels-hererocks-${TEST_GIT_HEREROCKS_COMMIT:0:12}"
+mkdir -p "$wheels"
+python3 - "$src/hererocks.py" "$wheels" <<'PY'
+import base64, hashlib, os, re, sys, zipfile
+module, out = sys.argv[1], sys.argv[2]
+code = open(module, "rb").read()
+version = re.search(rb'__version__ = "([^"]+)"', code).group(1).decode()
+dist = "hererocks-%s.dist-info" % version
+files = {
+    "hererocks.py": code,
+    dist + "/METADATA": ("Metadata-Version: 2.1\nName: hererocks\nVersion: %s\n" % version).encode(),
+    dist + "/WHEEL": b"Wheel-Version: 1.0\nGenerator: build-haxe\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+    dist + "/entry_points.txt": b"[console_scripts]\nhererocks = hererocks:main\n",
+}
+record = ""
+for name, data in files.items():
+    digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+    record += "%s,sha256=%s,%d\n" % (name, digest, len(data))
+record += dist + "/RECORD,,\n"
+files[dist + "/RECORD"] = record.encode()
+path = os.path.join(out, "hererocks-%s-py3-none-any.whl" % version)
+with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+    for name, data in files.items():
+        z.writestr(zipfile.ZipInfo(name, (2000, 1, 1, 0, 0, 0)), data)
+PY
 echo "env:PIP_NO_INDEX=1"
+echo "env:PIP_PRE=1"
 echo "env:PIP_FIND_LINKS=$( [ "$HOST_OS" = windows ] && cygpath -m "$wheels" || echo "$wheels")"
 echo "env:PIP_DISABLE_PIP_VERSION_CHECK=1"

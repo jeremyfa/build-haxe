@@ -68,7 +68,10 @@ main() {
             linux-arm64) docker_platform=linux/arm64; arch_arg=arm64 ;;
         esac
         docker info >/dev/null 2>&1 || die "Docker is not running"
+        with_mono=1
+        [ "$HOST_OS" = "mac" ] && [ "$docker_platform" = "linux/amd64" ] && with_mono=0
         docker build -q --platform "$docker_platform" --build-arg TEST_IMAGE="$TEST_IMAGE" \
+            --build-arg WITH_MONO="$with_mono" \
             -t "build-haxe-test:$arch_arg" -f "$ROOT/docker/linux-test.Dockerfile" "$ROOT/docker" >/dev/null
         mounts=(-v "$ROOT:/workspace")
         run_env=(-e HAXE_PROFILE="$HAXE_PROFILE" -e JOBS="$JOBS")
