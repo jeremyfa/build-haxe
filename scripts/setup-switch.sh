@@ -86,11 +86,20 @@ done
 # opam is a native program on Windows: give it a D:/a/... path.
 haxe_src="$HAXE_DIR"
 [ "$os" = "windows" ] && haxe_src="$(cygpath -m "$HAXE_DIR")"
+# System dependencies: on macOS and Linux they are provided by the build
+# (static C libraries) or the image, and opam must not look for packages.
+# On Windows opam installs them in its own Cygwin (pkgconf, the mingw
+# packages the conf-* packages check), as on the official CI.
+depexts=(--assume-depexts)
+if [ "$os" = "windows" ]; then
+    depexts=()
+    unset OPAMNODEPEXTS
+fi
 
 if [ "$mode" = "--unlocked" ]; then
     log "installing Haxe dependencies (unlocked resolution)"
     rm -f "$HAXE_DIR/haxe.opam.locked"
-    "$opam" install "$haxe_src" --deps-only --assume-depexts
+    "$opam" install "$haxe_src" --deps-only "${depexts[@]+"${depexts[@]}"}"
 else
     [ -n "$lock" ] && [ -f "$lock" ] || die "no haxe.opam.locked in the profile folders of $HAXE_PROFILE (${PROFILE_DIRS[*]}). Run scripts/update-locks.sh first."
     if [ "$os" = "windows" ]; then
@@ -102,7 +111,7 @@ else
         cp "$lock" "$HAXE_DIR/haxe.opam.locked"
     fi
     log "installing Haxe dependencies from $(basename "$lock")"
-    "$opam" install "$haxe_src" --deps-only --locked --assume-depexts
+    "$opam" install "$haxe_src" --deps-only --locked "${depexts[@]+"${depexts[@]}"}"
 fi
 
 log "opam switch ready for $HAXE_PROFILE/$target"
