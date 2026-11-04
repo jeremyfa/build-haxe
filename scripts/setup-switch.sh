@@ -94,6 +94,21 @@ depexts=(--assume-depexts)
 if [ "$os" = "windows" ]; then
     depexts=()
     unset OPAMNODEPEXTS
+    # Cygwin packages some opam packages check without declaring them as
+    # Windows system dependencies (CYGWIN_PACKAGES of the profile, e.g. the
+    # perl modules of camlp5), installed with the setup program of opam's
+    # Cygwin and the same options opam uses.
+    if [ -n "${CYGWIN_PACKAGES:-}" ]; then
+        root="$(cygpath -u "$("$opam" var root | tr -d '\r')")"
+        setup="$root/.cygwin/setup-x86_64.exe"
+        [ -f "$setup" ] || die "Cygwin setup program not found at $setup"
+        log "installing Cygwin packages: $CYGWIN_PACKAGES"
+        "$setup" --root "$(cygpath -w "$root/.cygwin/root")" --quiet-mode noinput --no-shortcuts \
+            --no-startmenu --no-desktop --no-admin --no-version-check --no-write-registry \
+            --packages "$(echo $CYGWIN_PACKAGES | tr ' ' ',')" --symlink-type native --only-site \
+            --site https://cygwin.mirror.constant.com/ --local-package-dir "$(cygpath -w "$root/.cygwin/cache")" \
+            >&2 || die "could not install the Cygwin packages $CYGWIN_PACKAGES"
+    fi
 fi
 
 if [ "$mode" = "--unlocked" ]; then
