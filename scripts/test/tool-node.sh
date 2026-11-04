@@ -19,7 +19,7 @@ if [ ! -f "$node/.done" ]; then
     [ ! -e "$node" ] || mv "$node" "$node.old.$(date +%Y%m%d%H%M%S)"
     mkdir -p "$node.extract.$$"
     case "$archive" in
-        *.zip) unzip -q "$archive" -d "$node.extract.$$" ;;
+        *.zip) extract_zip "$archive" "$node.extract.$$" ;;
         *) tar -xf "$archive" -C "$node.extract.$$" ;;
     esac
     mv "$node.extract.$$/$top" "$node"

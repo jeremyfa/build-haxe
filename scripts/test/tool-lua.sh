@@ -21,9 +21,13 @@ platform="$(test_platform "$target")"
 command -v python3 >/dev/null || die "python3 must be on the PATH (tool-python.sh)"
 
 venv="$tools/hererocks-$TEST_HEREROCKS_VERSION"
+wheels="$tools/pip-wheels-hererocks-$TEST_HEREROCKS_VERSION"
 if [ ! -f "$venv/.done" ]; then
     [ ! -e "$venv" ] || mv "$venv" "$venv.old.$(date +%Y%m%d%H%M%S)"
     wheel="$(test_file_any PIP_HEREROCKS)"
+    mkdir -p "$wheels"
+    cp -f "$wheel" "$wheels/"
+    wheel="$wheels/$(basename "$wheel")"
     [ "$HOST_OS" = "windows" ] && wheel="$(cygpath -m "$wheel")"
     python3 -m venv "$venv" >&2
     if [ "$platform" = "WINDOWS_X64" ]; then
@@ -31,11 +35,19 @@ if [ ! -f "$venv/.done" ]; then
     else
         "$venv/bin/python3" -m pip install --no-index --no-deps "$wheel" >&2
     fi
+    # Only the hererocks command goes on the PATH, not the pip of the venv:
+    # RunCi 4.3 runs `pip install --user hererocks`, which a venv refuses.
+    mkdir -p "$venv/expose"
+    if [ "$platform" = "WINDOWS_X64" ]; then
+        cp -f "$venv/Scripts/hererocks.exe" "$venv/expose/"
+    else
+        ln -sf "$venv/bin/hererocks" "$venv/expose/hererocks"
+    fi
     touch "$venv/.done"
 fi
-if [ "$platform" = "WINDOWS_X64" ]; then
-    echo "path:$venv/Scripts"
-else
-    "$venv/bin/hererocks" --version >&2
-    echo "path:$venv/bin"
-fi
+[ "$platform" = "WINDOWS_X64" ] || "$venv/expose/hererocks" --version >&2
+echo "path:$venv/expose"
+# Any `pip install hererocks` (RunCi 4.3) gets the pinned wheel, offline.
+echo "env:PIP_NO_INDEX=1"
+echo "env:PIP_FIND_LINKS=$( [ "$HOST_OS" = windows ] && cygpath -m "$wheels" || echo "$wheels")"
+echo "env:PIP_DISABLE_PIP_VERSION_CHECK=1"

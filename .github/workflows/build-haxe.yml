@@ -13,9 +13,10 @@ on:
         description: Dependency profile (auto, haxe5, haxe43)
         default: auto
       run_tests:
-        description: Run the default test suites of the profile
-        type: boolean
-        default: true
+        description: "Tests: none, default (DEFAULT_TEST_TARGETS of the profile) or all (its full suite)"
+        type: choice
+        options: [all, default, none]
+        default: all
       publish:
         description: Publish a GitHub release
         type: boolean
@@ -69,6 +70,8 @@ jobs:
     outputs:
       builds: ${{ steps.resolve.outputs.builds }}
       any: ${{ steps.resolve.outputs.any }}
+      tests: ${{ steps.resolve.outputs.tests }}
+      any_tests: ${{ steps.resolve.outputs.any_tests }}
     steps:
       - uses: actions/checkout@v4
 
@@ -79,6 +82,7 @@ jobs:
           INPUT_REPO: ${{ inputs.repo }}
           INPUT_REF: ${{ inputs.ref }}
           INPUT_PROFILE: ${{ inputs.profile }}
+          INPUT_TESTS: ${{ inputs.run_tests }}
         run: |
           set -euo pipefail
           source versions.env
@@ -117,6 +121,32 @@ jobs:
           echo "any=$([ "$builds" = "[]" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
           echo "$builds" | jq .
 
+          # Test jobs: one per build, platform and test target, from the
+          # profile's lists (scripts/test/test-matrix.sh). Scheduled and
+          # push runs test everything.
+          selection="${INPUT_TESTS:-all}"
+          [ "${{ github.event_name }}" = "workflow_dispatch" ] || selection=all
+          tests="[]"
+          if [ "$selection" != "none" ]; then
+            for row in $(echo "$builds" | jq -c '.[]'); do
+              profile="$(echo "$row" | jq -r .profile)"
+              while read -r platform test; do
+                case "$platform" in
+                  mac-*) runner=macos-15 ;;
+                  linux-x64) runner=ubuntu-24.04 ;;
+                  linux-arm64) runner=ubuntu-24.04-arm ;;
+                  windows-*) runner=windows-2025 ;;
+                esac
+                tests="$(echo "$tests" | jq -c --argjson b "$row" --arg platform "$platform" \
+                  --arg runner "$runner" --arg test "$test" \
+                  '. + [$b + {platform: $platform, runner: $runner, test: $test}]')"
+              done < <(scripts/test/test-matrix.sh "$profile" "$selection")
+            done
+          fi
+          echo "tests=$tests" >> "$GITHUB_OUTPUT"
+          echo "any_tests=$([ "$tests" = "[]" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          echo "$tests" | jq -c '.[] | [.profile, .platform, .test]' 
+
   build:
     name: ${{ matrix.platform.name }} (${{ matrix.build.profile }} ${{ matrix.build.short }})
     needs: resolve
@@ -143,7 +173,8 @@ jobs:
           repo: ${{ matrix.build.repo }}
           ref: ${{ matrix.build.commit }}
           profile: ${{ matrix.build.profile }}
-          run-tests: ${{ github.event_name != 'workflow_dispatch' || inputs.run_tests }}
+          # Tests run in the test jobs below, on the archive.
+          run-tests: 'false'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -151,10 +182,96 @@ jobs:
           path: ${{ steps.haxe.outputs.archive }}
           retention-days: 7
 
+  test:
+    name: test ${{ matrix.test }} ${{ matrix.platform }} (${{ matrix.profile }} ${{ matrix.short }})
+    needs: [resolve, build]
+    if: needs.resolve.outputs.any_tests == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.tests) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      HAXE_REPO: ${{ matrix.repo }}
+      HAXE_COMMIT: ${{ matrix.commit }}
+      HAXE_PROFILE: ${{ matrix.profile }}
+    steps:
+      - name: Keep LF line endings (Windows)
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - name: Install host tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew bundle --file=Brewfile.tests
+
+      # No cache for the test toolchains: about 70 jobs with a few hundred MB
+      # each would exceed the 10 GB cache of the repository. They come from
+      # the dependency mirror.
+      - name: Clone Haxe
+        run: ./setup-haxe.sh
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: archive-${{ matrix.profile }}-${{ matrix.short }}-${{ matrix.platform }}
+          path: build/imported
+
+      - name: Import the build
+        run: scripts/test/import-build.sh "${{ matrix.platform }}" "$(ls build/imported/* | head -1)"
+
+      - name: Test
+        run: ./test-haxe.sh "${{ matrix.platform }}" "${{ matrix.test }}"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-${{ matrix.profile }}-${{ matrix.short }}-${{ matrix.platform }}-${{ matrix.test }}
+          path: build/test-results
+          retention-days: 7
+
+  test-summary:
+    name: Test summary
+    needs: [resolve, test]
+    if: always() && needs.resolve.outputs.any_tests == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: test-*
+          path: results
+          merge-multiple: true
+      - name: Summary
+        run: |
+          {
+            echo "### Tests"
+            echo
+            echo "| profile | platform | target | status | duration |"
+            echo "|---|---|---|---|---|"
+            find results -name '*.status' | sort | while read -r f; do
+              # results/<profile>/<platform>/<build id>/<target>.status
+              rel="${f#results/}"
+              profile="${rel%%/*}"; rest="${rel#*/}"
+              platform="${rest%%/*}"
+              target="$(basename "$f" .status)"
+              read -r status duration < "$f"
+              echo "| $profile | $platform | $target | $status | ${duration}s |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
   publish-release:
     name: Publish release (${{ matrix.build.profile }} ${{ matrix.build.short }})
-    needs: [resolve, build]
-    if: needs.resolve.outputs.any == 'true' && (github.event_name != 'workflow_dispatch' || inputs.publish)
+    needs: [resolve, build, test]
+    # Only when the build and every test job passed (or tests were not run).
+    if: >-
+      always() && needs.resolve.outputs.any == 'true' && needs.build.result == 'success'
+      && (needs.test.result == 'success' || needs.test.result == 'skipped')
+      && (github.event_name != 'workflow_dispatch' || inputs.publish)
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false

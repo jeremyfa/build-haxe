@@ -28,6 +28,7 @@ tools_for() {
         php) echo "php" ;;
         hl) echo "hashlink" ;;
         lua) echo "python lua" ;;
+        cs) echo "mono" ;;
         jvm|java) echo "jdk" ;;
         *) echo "" ;;
     esac

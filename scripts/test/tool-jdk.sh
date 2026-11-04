@@ -17,7 +17,7 @@ if [ ! -f "$jdk/.done" ]; then
     [ ! -e "$jdk" ] || mv "$jdk" "$jdk.old.$(date +%Y%m%d%H%M%S)"
     mkdir -p "$jdk.extract.$$"
     case "$archive" in
-        *.zip) unzip -q "$archive" -d "$jdk.extract.$$" ;;
+        *.zip) extract_zip "$archive" "$jdk.extract.$$" ;;
         *) tar -xzf "$archive" -C "$jdk.extract.$$" ;;
     esac
     mv "$jdk.extract.$$/jdk-$TEST_JDK_VERSION" "$jdk"

@@ -18,7 +18,7 @@ if [ ! -f "$php/.done" ]; then
     mkdir -p "$php.extract.$$"
     case "$archive" in
         # official Windows build: php.exe and ext/ at the root of the zip
-        *.zip) unzip -q "$archive" -d "$php.extract.$$" ;;
+        *.zip) extract_zip "$archive" "$php.extract.$$" ;;
         # static-php-cli: a single static php binary
         *) tar -xzf "$archive" -C "$php.extract.$$" ;;
     esac

@@ -50,6 +50,17 @@ test_file_any() {
     download "$url" "$sha" "$name" test
 }
 
+# extract_zip <zip> <dest>: unzip, or PowerShell where unzip is missing
+# (Git Bash on Windows)
+extract_zip() {
+    mkdir -p "$2"
+    if command -v unzip >/dev/null; then
+        unzip -q "$1" -d "$2"
+    else
+        powershell -NoProfile -Command "Expand-Archive -LiteralPath '$(cygpath -w "$1")' -DestinationPath '$(cygpath -w "$2")' -Force"
+    fi
+}
+
 # git_dep_name <N>: lower-case name used for archives and folders
 git_dep_name() {
     echo "$1" | tr '[:upper:]' '[:lower:]'

@@ -251,12 +251,49 @@ All other versions (opam, zlib, pcre2, mbedtls, neko sources, container images) 
 
 ## Running tests
 
+`test-haxe.sh` runs the test suites of Haxe (`tests/RunCi.hxml`) on a built folder, for every target the profile supports:
+
 ```bash
-./test-haxe.sh mac-universal              # default suites of the profile
-./test-haxe.sh linux-arm64 macro          # runs in docker/linux-test.Dockerfile
+./test-haxe.sh mac-universal              # DEFAULT_TEST_TARGETS of the profile (macro,neko)
+./test-haxe.sh mac-universal all          # the full suite of the profile on this platform
+./test-haxe.sh linux-x64 js,cpp           # a list of RunCi targets
+./test-haxe-all.sh                        # full suite: macOS universal, Linux arm64 and x64
 ```
 
-Default suites: `macro,neko` for both profiles. Tests run on a fresh copy of the clone in `build/test-work/` (inside the container for Linux). A few macro tests call node, python3 or Java: the Linux test image has them, on macOS they must be installed. Other RunCi targets (`js`, `hl`, `cpp`, `jvm`, `python`, `php`, `lua`) can be listed too, but need their own toolchain installed.
+Linux runs in Docker (`docker/linux-test.Dockerfile`, Ubuntu 22.04 like the official CI). Results go to `build/test-results/<profile>/<target>/<build id>/`: one log and one status per test target, `summary.md`, `results.json` and `env.txt` (versions of every tool used).
+
+### What runs
+
+| | development (`haxe5`) | 4.3_bugfix (`haxe43`) |
+|---|---|---|
+| macOS | macro neko js hl cpp jvm python php lua | macro neko js cpp java jvm cs python php |
+| Linux x64 | macro neko js hl cpp jvm python php lua | macro neko js hl cpp java jvm cs python php lua |
+| Linux arm64 | macro neko js hl cpp jvm python php lua | macro neko js cpp jvm python php lua |
+| Windows x64 | macro neko js cpp jvm python php | macro neko js cpp java jvm cs python php |
+
+`cpp` also runs the cppia tests. The lists follow the official CI of each branch (`FULL_TEST_TARGETS` and `TEST_SKIP_*` in `profiles/*/profile.env`), with these differences:
+- flash is not tested (the Flash Player is no longer distributed);
+- hl on arm64 runs the HL/C tests only (`--skip-hl-jit`): HashLink has no VM on arm64;
+- 4.3: hl is not tested on macOS (the official CI ran it on Intel Macs only; the HashLink 1.x VM is x86_64 and its libraries came from Homebrew);
+- Windows: hl and lua are not set up by build-haxe yet.
+
+### How it stays pinned and self-contained
+
+RunCi installs part of what it needs by itself, from moving branches and into the home folder. `test-haxe.sh` prepares everything first, so RunCi only finds things already there:
+
+- **Toolchains** come from the pinned archives of `test-versions.env` (sha256, mirrored in the `test-deps` release of the [dependency mirror](#dependency-mirror)), installed in `.cache/test-tools/<platform>/`: Python (python-build-standalone) and PyPy, Node.js, a JDK (Temurin 21, Temurin 11 for 4.3, whose class reader does not read newer class files), PHP (static-php-cli builds, the official build on Windows), hererocks for Lua. HashLink and hxcpp are built from pinned commits.
+- **Repositories RunCi clones** (tink_core, hxcoro, java-lib-tests...) and installs with `haxelib git` are redirected to local mirrors of pinned commits through the git configuration of the test home folder. The haxelib libraries (utest, hxnodejs, hxjava, hxcpp, hashlink...) are installed beforehand with `haxelib dev`.
+- **npm**: deasync (sys tests of js) is installed from pinned package files, never from the registry.
+- RunCi runs once per test target, in a fresh copy of the sources, with `HOME` in the cache, `TZ=UTC`, a UTF-8 locale, and **without `GITHUB_ACTIONS`**, even on GitHub: in CI mode RunCi reinstalls libraries from their default branches and calls `sudo apt-get` and `brew`. The tests marked `#if github` (HTTP echo server, a few timezone checks) are therefore not run.
+
+Not pinned yet:
+- Lua: hererocks downloads Lua, LuaJIT and LuaRocks, and LuaRocks installs the rocks (some from `scm` rockspecs).
+- The haxelib libraries that tink_core's tests install from lib.haxe.org.
+- On macOS, the C libraries of the Lua rocks and mono for cs come from Homebrew: `brew bundle --file=Brewfile.tests`.
+
+### On GitHub Actions
+
+Each build is tested by one job per platform and test target, on the archive the build job made (`scripts/test/import-build.sh`, matrix from `scripts/test/test-matrix.sh`). The release is published only when every test job passes. `workflow_dispatch` has a `run_tests` choice: `all` (default), `default` or `none`.
 
 ## Known limits
 
