@@ -282,7 +282,7 @@ Linux runs in Docker (`docker/linux-test.Dockerfile`, Ubuntu 22.04 like the offi
 
 RunCi installs part of what it needs by itself, from moving branches and into the home folder. `test-haxe.sh` prepares everything first, so RunCi only finds things already there:
 
-- **Toolchains** come from the pinned archives of `test-versions.env` (sha256, mirrored in the `test-deps` release of the [dependency mirror](#dependency-mirror)), installed in `.cache/test-tools/<platform>/`: Python (python-build-standalone) and PyPy, Node.js, a JDK (Temurin 21, Temurin 11 for 4.3, whose class reader does not read newer class files), PHP (static-php-cli builds, the official build on Windows), hererocks for Lua. HashLink and hxcpp are built from pinned commits.
+- **Toolchains** come from the pinned archives of `test-versions.env` (sha256, mirrored in the `test-deps` release of the [dependency mirror](#dependency-mirror)), installed in `.cache/test-tools/<platform>/`: Python (python-build-standalone) and PyPy, Node.js, a JDK (Temurin 21, Temurin 11 for 4.3, whose class reader does not read newer class files), PHP (static-php-cli builds, the official build on Windows with a php.ini that enables its extensions). HashLink and hxcpp are built from pinned commits, and hererocks (Lua) runs from a pinned commit of its repository: its last release knows neither Lua 5.5 nor the current LuaJIT downloads.
 - **Repositories RunCi clones** (tink_core, hxcoro, java-lib-tests...) and installs with `haxelib git` are redirected to local mirrors of pinned commits through the git configuration of the test home folder. The haxelib libraries (utest, hxnodejs, hxjava, hxcpp, hashlink...) are installed beforehand with `haxelib dev`.
 - **npm**: deasync (sys tests of js) is installed from pinned package files, never from the registry.
 - RunCi runs once per test target, in a fresh copy of the sources, with `HOME` in the cache, `TZ=UTC`, a UTF-8 locale, and **without `GITHUB_ACTIONS`**, even on GitHub: in CI mode RunCi reinstalls libraries from their default branches and calls `sudo apt-get` and `brew`. The tests marked `#if github` (HTTP echo server, a few timezone checks) are therefore not run.
@@ -291,6 +291,7 @@ Not pinned yet:
 - Lua: hererocks downloads Lua, LuaJIT and LuaRocks, and LuaRocks installs the rocks (some from `scm` rockspecs).
 - The haxelib libraries that tink_core's tests install from lib.haxe.org.
 - On macOS, the C libraries of the Lua rocks and mono for cs come from Homebrew: `brew bundle --file=Brewfile.tests`.
+- Testing linux-x64 from an Apple Silicon Mac runs under Rosetta: the image is built without mono (its installation fails there) and LuaJIT 2.0 does not run, so cs and part of lua only pass on a real x64 machine or on the CI.
 
 ### On GitHub Actions
 

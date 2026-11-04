@@ -293,6 +293,8 @@ Constats qui ont guidé les choix :
 - RunCi 4.3 lance toujours `pip install --user hererocks` sous Linux : `PIP_NO_INDEX` et `PIP_FIND_LINKS` lui font installer la wheel figée.
 - HashLink n'a pas de VM sur arm64 : `--skip-hl-jit` et un `hl` factice qui le signale ; la VM 1.x de 4.3 est x86_64 seulement, d'où l'exclusion de `hl` sur mac pour 4.3.
 
+Windows (runners GitHub) : le build passe dans le Cygwin d'opam, les tests dans Git Bash. Les outils natifs (opam, objdump, haxelib.exe, node, git) reçoivent des chemins `D:/a/...` (`cygpath -m`) ; opam y installe lui-même les dépendances système ; Strawberry Perl est retiré du PATH (son `patch.exe` plante, son perl n'a pas les modules de camlp5) et les patches passent par `git apply` ; flexlink reçoit `-link -static` ; le générateur Visual Studio de neko vient de `vswhere` (2026 sur les runners actuels).
+
 Reste non figé : les sources que hererocks et LuaRocks téléchargent pour Lua, les bibliothèques que les tests de tink_core installent depuis lib.haxe.org, et sur mac les bibliothèques C des rocks Lua et mono (Homebrew, `Brewfile.tests`). Pas encore fait sous Windows : `hl` (HashLink avec MSVC) et `lua` (msys2).
 
 ## 7. CI : `.github/workflows/build-haxe.yml`
