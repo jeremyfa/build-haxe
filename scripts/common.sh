@@ -588,7 +588,11 @@ sanitize_env() {
             ;;
         windows)
             # OPAMROOT and the switch come from setup-ocaml. Keep its PATH,
-            # put neko first so conf-neko and nekotools find it.
+            # put neko first so conf-neko and nekotools find it, and drop
+            # Strawberry Perl (on the GitHub runners): its perl lacks the
+            # modules opam installs for the Cygwin perl (camlp5 needs them),
+            # and its old patch.exe crashes.
+            PATH="$(echo "$PATH" | tr ':' '\n' | grep -v -i strawberry | paste -s -d: -)"
             export PATH="$neko:$PATH"
             unset OPAMSWITCH
             ;;
