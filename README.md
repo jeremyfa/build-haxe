@@ -276,6 +276,7 @@ Linux runs in Docker (`docker/linux-test.Dockerfile`, Ubuntu 22.04 like the offi
 - hl on arm64 runs the HL/C tests only (`--skip-hl-jit`): HashLink has no VM on arm64;
 - 4.3: hl is not tested on macOS (the official CI ran it on Intel Macs only; the HashLink 1.x VM is x86_64 and its libraries came from Homebrew);
 - Windows: hl and lua are not set up by build-haxe yet.
+- 4.3, cs on macOS is allowed to fail: one test (`misc/cs/csTwoLibs`) does not compile with the mono 6.14 of Homebrew; it passes with the mono 6.8 of Linux.
 
 ### How it stays pinned and self-contained
 
