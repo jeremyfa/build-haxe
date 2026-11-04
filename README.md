@@ -277,7 +277,7 @@ Linux runs in Docker (`docker/linux-test.Dockerfile`, Ubuntu 22.04 like the offi
 - 4.3: hl is not tested on macOS (the official CI ran it on Intel Macs only; the HashLink 1.x VM is x86_64 and its libraries came from Homebrew);
 - Windows: hl and lua are not set up by build-haxe yet.
 - 4.3, cs on macOS is allowed to fail: one test (`misc/cs/csTwoLibs`) does not compile with the mono 6.14 of Homebrew; it passes with the mono 6.8 of Linux.
-- 4.3, js and php on Windows are allowed to fail: they hang on the GitHub runners (js at the server tests, php in the unit tests), not investigated yet. Every target is stopped after `TEST_TIMEOUT` seconds (default 2700) with the status `timeout`.
+- 4.3, js and php on Windows are allowed to fail: js fails in the server tests (`node test.js` exits with an unhandled ECONNRESET) and php hangs in the unit tests, not investigated yet. Every target is stopped after `TEST_TIMEOUT` seconds (default 2700) with the status `timeout`.
 
 ### How it stays pinned and self-contained
 
