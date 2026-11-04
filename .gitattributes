@@ -1,0 +1,6 @@
+# Scripts, profiles and locks must keep LF line endings on every system
+# (Windows checkouts included): bash and the lock hashes depend on it.
+* text=auto eol=lf
+*.zip binary
+*.gz binary
+*.png binary

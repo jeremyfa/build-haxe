@@ -279,17 +279,21 @@ Compatible avec `ceramic/git/haxe-binary` (`mac/`, `linux-x86_64/`, `linux-arm64
 
 ## 6. Tests
 
-`test-haxe.sh <plateforme> [cibles]` lance `haxe RunCi.hxml <cibles>` dans `haxe/tests` avec :
-- le haxe construit en PATH et `HAXE_STD_PATH` ;
-- neko local en PATH ;
-- `HAXELIB_PATH=.cache/haxelib` ;
-- `HOME=.cache/home` car RunCi écrit dans `~/haxe-ci` (`tests/runci/System.hx:239-242`).
+`test-haxe.sh <plateforme> [default|all|<cibles>]` lance les tests de Haxe (`tests/RunCi.hxml`) sur un dossier construit. `all` prend la liste complète du profil (`FULL_TEST_TARGETS`), moins les cibles exclues sur la plateforme (`TEST_SKIP_*`), comme sur le CI officiel de chaque branche (sans flash). `test-haxe-all.sh` enchaîne mac universel, Linux arm64 et Linux x64. Le détail utilisateur est dans le README (« Running tests »).
 
-Règles :
-- Sur APFS, `tests/sys/compile-fs.hxml` est vidé avant les tests (noms de fichiers Unicode invalides) et restauré après (`git checkout -- tests/sys/compile-fs.hxml`).
-- Sur 4.3, RunCi lance lui-même `nekotools server` : neko doit être dans le PATH même pour `macro`.
-- Cibles par défaut : `macro,neko` (ne demandent que haxe, neko, git et le réseau pour utest). Les autres sont opt-in avec leurs prérequis : `js` (node, npm), `hl` (clone + CMake de HashLink), `cpp` (hxcpp, toolchain C++), `jvm` (JDK), `python` (python3, pypy3), `php` (php-cli), `lua` (hererocks, luarocks).
-- Sur Linux local, les tests tournent dans le conteneur (`docker/linux-test.Dockerfile`).
+Principes (décidés le 2026-11-04) :
+- **Tout est figé** dans `test-versions.env` (et les profils pour 4.3) : archives d'outils avec sha256 (Python, PyPy, Node.js, JDK 21 et JDK 11 pour 4.3, PHP, hererocks, paquets npm de deasync) et commits des dépôts (utest, haxeserver, tink_core, hxcoro, hxjava, hxnodejs, format, java-lib-tests, hxcpp, hashlink, hxcs), sha256 de leur tar. Tout est publié dans la release `test-deps` du miroir.
+- **RunCi n'installe rien lui-même** : les outils sont pré-installés dans `.cache/test-tools/<plateforme>/`, les bibliothèques haxelib par `haxelib dev`, et les `git clone` / `haxelib git` de RunCi sont redirigés vers des miroirs git locaux des commits figés (`insteadOf` dans le `.gitconfig` du HOME de test).
+- **Une exécution RunCi par cible**, dans une copie fraîche des sources, avec `HOME` dans le cache, `TZ=UTC`, une locale UTF-8, et sans `GITHUB_ACTIONS` (sinon RunCi réinstalle depuis les branches par défaut, appelle `sudo apt-get`/`brew`, et lance un echo server par cible sans l'arrêter, ce qui faisait échouer `TestHttp` en enchaînant les cibles). Conséquence : les tests `#if github` ne tournent pas.
+- **CI** : un job par build, plateforme et cible (34 pour haxe5, 37 pour haxe43), sur l'archive du job de build (`scripts/test/import-build.sh`, matrice `scripts/test/test-matrix.sh`). La release n'est publiée que si tous passent.
+
+Constats qui ont guidé les choix :
+- Haxe 4.3 ne lit pas les `.class` des JDK récents (« Class reader failed: Invalid constant index 0 ») : JDK 11 pour haxe43, comme les runners du CI officiel de 4.3.
+- npm 11 ne lance plus les scripts d'installation : `tool-deasync.sh` lance `build.js` de deasync lui-même (binaire précompilé s'il existe, sinon node-gyp avec les en-têtes du node figé ; Linux arm64 compile).
+- RunCi 4.3 lance toujours `pip install --user hererocks` sous Linux : `PIP_NO_INDEX` et `PIP_FIND_LINKS` lui font installer la wheel figée.
+- HashLink n'a pas de VM sur arm64 : `--skip-hl-jit` et un `hl` factice qui le signale ; la VM 1.x de 4.3 est x86_64 seulement, d'où l'exclusion de `hl` sur mac pour 4.3.
+
+Reste non figé : les sources que hererocks et LuaRocks téléchargent pour Lua, les bibliothèques que les tests de tink_core installent depuis lib.haxe.org, et sur mac les bibliothèques C des rocks Lua et mono (Homebrew, `Brewfile.tests`). Pas encore fait sous Windows : `hl` (HashLink avec MSVC) et `lua` (msys2).
 
 ## 7. CI : `.github/workflows/build-haxe.yml`
 

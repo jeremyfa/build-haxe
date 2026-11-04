@@ -83,10 +83,14 @@ for pin in ${OPAM_PINS:-}; do
     fi
 done
 
+# opam is a native program on Windows: give it a D:/a/... path.
+haxe_src="$HAXE_DIR"
+[ "$os" = "windows" ] && haxe_src="$(cygpath -m "$HAXE_DIR")"
+
 if [ "$mode" = "--unlocked" ]; then
     log "installing Haxe dependencies (unlocked resolution)"
     rm -f "$HAXE_DIR/haxe.opam.locked"
-    "$opam" install "$HAXE_DIR" --deps-only --assume-depexts
+    "$opam" install "$haxe_src" --deps-only --assume-depexts
 else
     [ -n "$lock" ] && [ -f "$lock" ] || die "no haxe.opam.locked in the profile folders of $HAXE_PROFILE (${PROFILE_DIRS[*]}). Run scripts/update-locks.sh first."
     if [ "$os" = "windows" ]; then
@@ -98,7 +102,7 @@ else
         cp "$lock" "$HAXE_DIR/haxe.opam.locked"
     fi
     log "installing Haxe dependencies from $(basename "$lock")"
-    "$opam" install "$HAXE_DIR" --deps-only --locked --assume-depexts
+    "$opam" install "$haxe_src" --deps-only --locked --assume-depexts
 fi
 
 log "opam switch ready for $HAXE_PROFILE/$target"

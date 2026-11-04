@@ -405,7 +405,8 @@ opam_repo_snapshot() {
 
 # First 12 characters of the sha256 of the profile's lock file.
 lock_hash() {
-    sha256_of "$PROFILE_LOCK" | cut -c1-12
+    # Line endings ignored: the same lock may be checked out with CRLF.
+    tr -d '\r' < "$PROFILE_LOCK" | sha256_stdin | cut -c1-12
 }
 # Asset name of the opam source cache of the profile (scripts/opam-cache.sh).
 opam_cache_name() {

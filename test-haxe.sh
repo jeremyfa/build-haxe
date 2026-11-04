@@ -168,7 +168,14 @@ main() {
         log "running RunCi ($t) for $HAXE_PROFILE/$target in $work"
         start="$(date +%s)"
         set +e
-        (cd "$work/tests" && env -u GITHUB_ACTIONS TEST="$t" haxe RunCi.hxml $args) 2>&1 | tee "$results/$t.log"
+        # With extra RunCi arguments (TEST_ARGS_*), the target goes on the
+        # command line like on the official CI: arguments after RunCi.hxml
+        # would go to haxe, not to RunCi.
+        if [ -n "$args" ]; then
+            (cd "$work/tests" && env -u GITHUB_ACTIONS haxe --run RunCi "$t" $args) 2>&1 | tee "$results/$t.log"
+        else
+            (cd "$work/tests" && env -u GITHUB_ACTIONS TEST="$t" haxe RunCi.hxml) 2>&1 | tee "$results/$t.log"
+        fi
         code="${PIPESTATUS[0]}"
         set -e
         duration=$(( $(date +%s) - start ))
