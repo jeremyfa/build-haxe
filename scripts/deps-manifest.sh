@@ -29,6 +29,7 @@ build_deps() {
     emit build "$(basename "$PCRE2_URL")" url "$PCRE2_URL" "$PCRE2_SHA256"
     emit build "$(basename "$MBEDTLS2_URL")" url "$MBEDTLS2_URL" "$MBEDTLS2_SHA256"
     emit build "$(basename "$MBEDTLS3_URL")" url "$MBEDTLS3_URL" "$MBEDTLS3_SHA256"
+    emit build "$(basename "$STRING_SHELLQUOTE_URL")" url "$STRING_SHELLQUOTE_URL" "$STRING_SHELLQUOTE_SHA256"
     emit build "opam-repository-${OPAM_REPO_COMMIT:0:12}.tar.gz" git \
         https://github.com/ocaml/opam-repository "$OPAM_REPO_SHA256" "$OPAM_REPO_COMMIT" \
         "opam-repository-$OPAM_REPO_COMMIT/"

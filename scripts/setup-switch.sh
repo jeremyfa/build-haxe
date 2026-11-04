@@ -109,6 +109,16 @@ if [ "$os" = "windows" ]; then
             --site https://cygwin.mirror.constant.com/ --local-package-dir "$(cygpath -w "$root/.cygwin/cache")" \
             >&2 || die "could not install the Cygwin packages $CYGWIN_PACKAGES"
     fi
+    # Pure Perl modules without a Cygwin package (WINDOWS_PERL_MODULES of the
+    # profile), made visible to the Cygwin perl through PERL5LIB.
+    if in_words STRING_SHELLQUOTE "${WINDOWS_PERL_MODULES:-}"; then
+        perl5="$CACHE_DIR/perl5"
+        mkdir -p "$perl5/String" "$perl5/src"
+        tar -xzf "$(download "$STRING_SHELLQUOTE_URL" "$STRING_SHELLQUOTE_SHA256")" -C "$perl5/src"
+        cp -f "$perl5/src/String-ShellQuote-1.04/ShellQuote.pm" "$perl5/String/ShellQuote.pm"
+        export PERL5LIB="$perl5${PERL5LIB:+:$PERL5LIB}"
+        log "perl module String::ShellQuote from $(basename "$STRING_SHELLQUOTE_URL")"
+    fi
 fi
 
 if [ "$mode" = "--unlocked" ]; then

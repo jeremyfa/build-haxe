@@ -362,6 +362,14 @@ mirror_url() {
     echo "$BUILD_HAXE_MIRROR/$tag/$2"
 }
 
+# in_words <word> <space separated list>
+in_words() {
+    case " $2 " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
+}
+
 # asset_name <url>: default asset name of a file in the mirror, the basename
 # of the URL with characters GitHub would rename replaced by "_".
 asset_name() {
