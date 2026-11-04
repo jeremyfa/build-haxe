@@ -38,6 +38,18 @@ test_file() {
     download "$url" "$sha" "$name" test
 }
 
+# test_file_any <KEY>: same as test_file for a file without platform variants
+# (TEST_FILE_<KEY>_URL).
+test_file_any() {
+    local key="$1" v url sha name
+    v="TEST_FILE_${key}_URL"; url="${!v:-}"
+    [ -n "$url" ] || die "TEST_FILE_${key}_URL is not set (test-versions.env)"
+    v="TEST_FILE_${key}_SHA256"; sha="${!v:-}"
+    [ -n "$sha" ] || die "TEST_FILE_${key}_SHA256 is not set (test-versions.env)"
+    v="TEST_FILE_${key}_NAME"; name="${!v:-$(asset_name "$url")}"
+    download "$url" "$sha" "$name" test
+}
+
 # git_dep_name <N>: lower-case name used for archives and folders
 git_dep_name() {
     echo "$1" | tr '[:upper:]' '[:lower:]'

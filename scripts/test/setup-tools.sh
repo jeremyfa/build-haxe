@@ -22,7 +22,12 @@ tools_for() {
         macro) echo "python node jdk" ;;
         neko) echo "" ;;
         python) echo "python" ;;
-        js) echo "node jdk" ;;  # the server tests use hxjava
+        # the server tests use hxjava; deasync (sys tests) is a native addon
+        # built with node-gyp, which needs python3
+        js) echo "node python jdk deasync" ;;
+        php) echo "php" ;;
+        hl) echo "hashlink" ;;
+        lua) echo "python lua" ;;
         jvm|java) echo "jdk" ;;
         *) echo "" ;;
     esac
@@ -45,9 +50,10 @@ for tool in $needed; do
     out="$("$ROOT/scripts/test/tool-$tool.sh" "$target")"
     while IFS= read -r line; do
         case "$line" in
-            path:*) paths="${line#path:}:$paths" ;;
+            # also applied here, for the tools that need the previous ones
+            path:*) paths="${line#path:}:$paths"; export PATH="${line#path:}:$PATH" ;;
             env:*) exports="$exports
-export ${line#env:}" ;;
+export ${line#env:}"; export "${line#env:}" ;;
         esac
     done <<< "$out"
 done

@@ -1,0 +1,11 @@
+# Homebrew packages needed by some test targets on macOS (test-haxe.sh).
+# They are the only parts of the test suite that do not come from pinned
+# archives (see README.md):
+# - lua: the C libraries of the Lua rocks, at the paths RunCi passes to
+#   LuaRocks (brew --prefix)
+# - cs (4.3 only): mono, which has no portable archive for macOS arm64
+brew "pcre2"
+brew "openssl@3"
+brew "libuv"
+brew "pipx"
+brew "mono"

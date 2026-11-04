@@ -141,6 +141,10 @@ prefetch_deps() {
 }
 prefetch_deps
 
+# CMake 4 refuses the old cmake_minimum_required of neko's sub-projects
+# (Boehm GC, pcre2...). The option below only reaches the main project; the
+# environment variable also reaches the ExternalProject builds.
+export CMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake_args=(-DCMAKE_BUILD_TYPE=Release -DSTATIC_DEPS=all -DRELOCATABLE=ON
     -DWITH_UI=OFF -DWITH_APACHE=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
