@@ -559,6 +559,9 @@ sanitize_env() {
     prefix="$(deps_prefix "$target")"
     neko="$(neko_dir "$target")"
 
+    # opam exec provides the stub path of the switch on Windows (bytecode
+    # tools such as camlp5o need it): kept there, set below elsewhere.
+    local keep_caml_ld="${CAML_LD_LIBRARY_PATH:-}"
     unset C_INCLUDE_PATH CPATH CPLUS_INCLUDE_PATH LIBRARY_PATH \
         DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH LD_LIBRARY_PATH \
         PKG_CONFIG_PATH OPAMSWITCH OCAMLPARAM CAML_LD_LIBRARY_PATH \
@@ -602,6 +605,7 @@ sanitize_env() {
             # and its old patch.exe crashes.
             PATH="$(echo "$PATH" | tr ':' '\n' | grep -v -i strawberry | paste -s -d: -)"
             export PATH="$neko:$PATH"
+            [ -z "$keep_caml_ld" ] || export CAML_LD_LIBRARY_PATH="$keep_caml_ld"
             unset OPAMSWITCH
             ;;
     esac
