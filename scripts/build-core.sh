@@ -45,7 +45,9 @@ case "$os" in
     windows)
         libparams=(-ccopt "-L$(cygpath -m "$prefix/lib")" -cclib -lpcre2-8 -cclib -lz -cclib -lmbedtls
             -cclib -lmbedx509 -cclib -lmbedcrypto -cclib -lcrypt32 -cclib -lws2_32 -cclib -lbcrypt
-            -ccopt -static)
+            # flexlink (the OCaml linker on Windows) passes what follows
+            # -link to gcc; it refuses -static itself.
+            -ccopt "-link -static")
         ;;
 esac
 
