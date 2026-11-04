@@ -185,7 +185,9 @@ jobs:
   test:
     name: test ${{ matrix.test }} ${{ matrix.platform }} (${{ matrix.profile }} ${{ matrix.short }})
     needs: [resolve, build]
-    if: needs.resolve.outputs.any_tests == 'true'
+    # Run even when the build of another platform failed: a job whose
+    # platform has no archive fails at the download, the others still test.
+    if: always() && needs.resolve.outputs.any_tests == 'true' && needs.build.result != 'cancelled'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
