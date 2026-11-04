@@ -70,7 +70,7 @@ applied=()
 revert_patches() {
     local p
     for p in "${applied[@]+"${applied[@]}"}"; do
-        (cd "$src_root" && patch -p1 -R -f -s < "$p") || warn "could not revert $p"
+        revert_patch "$src_root" "$p" || warn "could not revert $p"
     done
 }
 if [ "$src_root" = "$HAXE_DIR" ]; then

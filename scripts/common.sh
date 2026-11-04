@@ -268,15 +268,37 @@ haxe_short() { load_source_info; echo "$SRC_SHORT"; }
 # repository. -f keeps both BSD patch (macOS) and GNU patch from asking or
 # guessing: without it, BSD patch answers its own "Reversed patch detected!
 # Ignore -R?" question and reports an unapplied patch as present.
-apply_patch_once() {
-    local dir="$1" p="$2"
-    if (cd "$dir" && patch -p1 -R -f -s --dry-run < "$p" >/dev/null 2>&1); then
-        echo "already applied"
-    elif (cd "$dir" && patch -p1 -f -s --dry-run < "$p" >/dev/null 2>&1); then
-        (cd "$dir" && patch -p1 -f -s < "$p") >/dev/null
-        echo "applied"
+# revert_patch <dir> <patch>: undo a patch applied by apply_patch_once.
+revert_patch() {
+    if command -v patch >/dev/null 2>&1; then
+        (cd "$1" && patch -p1 -R -f -s < "$2")
     else
-        die "$(basename "$p") does not apply to $dir"
+        (cd "$1" && git apply -R "$2")
+    fi
+}
+
+apply_patch_once() {
+    local dir="$1" p="$2" out
+    if command -v patch >/dev/null 2>&1; then
+        if (cd "$dir" && patch -p1 -R -f -s --dry-run < "$p" >/dev/null 2>&1); then
+            echo "already applied"
+        elif out="$(cd "$dir" && patch -p1 -f -s --dry-run < "$p" 2>&1)"; then
+            (cd "$dir" && patch -p1 -f -s < "$p") >/dev/null
+            echo "applied"
+        else
+            die "$(basename "$p") does not apply to $dir: $out"
+        fi
+    else
+        # No patch command (the minimal Cygwin of opam on Windows): git apply
+        # works on any folder.
+        if (cd "$dir" && git apply -R --check "$p" >/dev/null 2>&1); then
+            echo "already applied"
+        elif out="$(cd "$dir" && git apply --check "$p" 2>&1)"; then
+            (cd "$dir" && git apply "$p")
+            echo "applied"
+        else
+            die "$(basename "$p") does not apply to $dir: $out"
+        fi
     fi
 }
 
