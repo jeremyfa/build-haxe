@@ -64,8 +64,15 @@ check_version() {
 check_haxelib() {
     local exe="$1" home out decoy m
     home="$(mktemp -d "${TMPDIR:-/tmp}/build-haxe-haxelib.XXXXXX")"
-    out="$(cd "$dir" && env -i HOME="$home" PATH="/usr/bin:/bin" sh -c \
-        "'$exe' setup '$home/lib' >/dev/null && '$exe' list >/dev/null && '$exe' version" 2>&1 || true)"
+    # haxelib.exe is a native program on Windows: Windows paths, and the
+    # user profile it reads instead of HOME.
+    local nhome="$home" winenv=""
+    if [ "$os" = "windows" ]; then
+        nhome="$(cygpath -m "$home")"
+        winenv="USERPROFILE=$nhome SystemRoot=${SYSTEMROOT:-C:\\Windows}"
+    fi
+    out="$(cd "$dir" && env -i HOME="$nhome" $winenv PATH="/usr/bin:/bin" sh -c \
+        "'$exe' setup '$nhome/lib' >/dev/null && '$exe' list >/dev/null && '$exe' version" 2>&1 || true)"
     case "$out" in
         [0-9]*) ok "haxelib setup, list and version: $out" ;;
         *) fail "haxelib: $out" ;;
@@ -73,7 +80,9 @@ check_haxelib() {
     decoy="$home/decoy"
     mkdir -p "$decoy"
     for m in std zlib regexp ssl sqlite mysql; do echo "not a module" > "$decoy/$m.ndll"; done
-    out="$(cd "$dir" && env -i HOME="$home" PATH="/usr/bin:/bin" NEKOPATH="$decoy" sh -c \
+    local ndecoy="$decoy"
+    [ "$os" = "windows" ] && ndecoy="$(cygpath -m "$decoy")"
+    out="$(cd "$dir" && env -i HOME="$nhome" $winenv PATH="/usr/bin:/bin" NEKOPATH="$ndecoy" sh -c \
         "'$exe' list >/dev/null && '$exe' version" 2>&1 || true)"
     case "$out" in
         [0-9]*) ok "haxelib ignores decoy modules in NEKOPATH (uses its own neko folder)" ;;
@@ -198,7 +207,9 @@ case "$os" in
         ;;
 
     windows)
-        dlls="$(objdump -p "$dir/haxe.exe" | awk '/DLL Name/{print tolower($3)}' | sort -u)"
+        # The objdump found on Windows runners can be a native one (mingw):
+        # give it a Windows path.
+        dlls="$(objdump -p "$(cygpath -m "$dir/haxe.exe")" | awk '/DLL Name/{print tolower($3)}' | sort -u)"
         bad="$(echo "$dlls" | grep -v -E '^(kernel32|msvcrt|ucrtbase|api-ms-win-.*|advapi32|ws2_32|crypt32|bcrypt|user32|shell32|ole32|oleaut32|secur32|iphlpapi|userenv|psapi|dbghelp|ntdll|shlwapi|version)\.dll$' || true)"
         [ -z "$bad" ] && ok "haxe.exe uses only system DLLs: $(echo $dlls)" || fail "haxe.exe depends on: $bad"
         check_version "$("$dir/haxe.exe" --version 2>&1 | tr -d '\r')" "haxe.exe --version"
