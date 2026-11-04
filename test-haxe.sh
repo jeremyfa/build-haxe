@@ -177,16 +177,23 @@ main() {
         # With extra RunCi arguments (TEST_ARGS_*), the target goes on the
         # command line like on the official CI: arguments after RunCi.hxml
         # would go to haxe, not to RunCi.
+        # A target that hangs is stopped after TEST_TIMEOUT seconds (status
+        # timeout) instead of using up the time of the whole job.
+        limit=(timeout --kill-after=60 "${TEST_TIMEOUT:-2700}")
+        command -v timeout >/dev/null 2>&1 || limit=()
         if [ -n "$args" ]; then
-            (cd "$work/tests" && env -u GITHUB_ACTIONS haxe --run RunCi "$t" $args) 2>&1 | tee "$results/$t.log"
+            (cd "$work/tests" && env -u GITHUB_ACTIONS "${limit[@]+"${limit[@]}"}" haxe --run RunCi "$t" $args) 2>&1 | tee "$results/$t.log"
         else
-            (cd "$work/tests" && env -u GITHUB_ACTIONS TEST="$t" haxe RunCi.hxml) 2>&1 | tee "$results/$t.log"
+            (cd "$work/tests" && env -u GITHUB_ACTIONS TEST="$t" "${limit[@]+"${limit[@]}"}" haxe RunCi.hxml) 2>&1 | tee "$results/$t.log"
         fi
         code="${PIPESTATUS[0]}"
         set -e
         duration=$(( $(date +%s) - start ))
         if [ "$code" = 0 ]; then
             status=pass
+        elif [ "$code" = 124 ] || [ "$code" = 137 ]; then
+            v="TEST_ALLOW_FAIL_$platform"
+            if in_list "$t" "${TEST_ALLOW_FAIL:-} ${!v:-}"; then status=allowed-fail; else status=timeout; fi
         else
             v="TEST_ALLOW_FAIL_$platform"
             if in_list "$t" "${TEST_ALLOW_FAIL:-} ${!v:-}"; then status=allowed-fail; else status=fail; fi

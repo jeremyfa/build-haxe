@@ -151,10 +151,21 @@ fi
 
 alpine_tag="build-haxe-alpine:$arch_arg"
 glibc_tag="build-haxe-glibc:$arch_arg"
+# Package mirrors (snapshot.debian.org especially) have short outages: each
+# image build is tried 3 times.
+docker_build_retry() {
+    local i
+    for i in 1 2 3; do
+        docker build "$@" && return 0
+        [ "$i" -lt 3 ] || return 1
+        warn "docker build failed, retrying in 30s ($i/3)"
+        sleep 30
+    done
+}
 log "building images"
-docker build --platform "$docker_platform" --build-arg ALPINE_IMAGE="$ALPINE_IMAGE" \
+docker_build_retry --platform "$docker_platform" --build-arg ALPINE_IMAGE="$ALPINE_IMAGE" \
     -t "$alpine_tag" -f "$ROOT/docker/linux.Dockerfile" "$ROOT/docker"
-docker build --platform "$docker_platform" --build-arg BASE_IMAGE="$GLIBC_IMAGE" --build-arg DEBIAN_SNAPSHOT="$GLIBC_SNAPSHOT" \
+docker_build_retry --platform "$docker_platform" --build-arg BASE_IMAGE="$GLIBC_IMAGE" --build-arg DEBIAN_SNAPSHOT="$GLIBC_SNAPSHOT" \
     -t "$glibc_tag" -f "$ROOT/docker/linux-glibc.Dockerfile" "$ROOT/docker"
 
 # Mounts and environment shared by the stages
