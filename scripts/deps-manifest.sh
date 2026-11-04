@@ -59,17 +59,24 @@ build_deps() {
         done
     done
 
-    # opam source caches, one per profile lock
-    local profile
+    # opam source caches, one per profile lock (a profile can have one
+    # lock per OS, see OCAML_VERSION_<OS>)
+    local profile os name seen=""
     for profile in "$ROOT"/profiles/*/; do
         profile="$(basename "$profile")"
         [ -f "$ROOT/profiles/$profile/haxe.opam.locked" ] || continue
-        (
-            HAXE_PROFILE="$profile"
-            unset OCAML_VERSION MBEDTLS_SERIES NEKO_SOURCE PROFILE_BUILD_STYLE OPAM_PINS
-            load_profile >/dev/null
-            emit build "$(opam_cache_name)" opam-cache "$profile" ""
-        )
+        for os in mac linux windows; do
+            name="$(
+                HAXE_PROFILE="$profile"
+                BUILD_HAXE_FOR_OS="$os"
+                unset OCAML_VERSION MBEDTLS_SERIES NEKO_SOURCE PROFILE_BUILD_STYLE OPAM_PINS
+                load_profile >/dev/null
+                [ ! -f "$PROFILE_LOCK" ] || opam_cache_name
+            )"
+            [ -n "$name" ] && ! in_words "$name" "$seen" || continue
+            seen="$seen $name"
+            emit build "$name" opam-cache "$profile:$os" ""
+        done
     done
 }
 

@@ -97,7 +97,7 @@ detect_builtin_profile() {
 # with HAXE_PROFILE_DIR. A caller profile may set PROFILE_BASE (a built-in
 # profile name, or "auto" for the one matching the sources): it then only
 # overrides what it sets, and its patches come after the base ones.
-# Sets PROFILE_DIRS (base first), PROFILE_LOCK and PROFILE_PATCHES.
+# Sets PROFILE_DIRS (base first), PROFILE_LOCK (PROFILE_LOCK_NAME) and PROFILE_PATCHES.
 load_profile() {
     [ -n "${HAXE_PROFILE:-}" ] || die "HAXE_PROFILE is not set"
     PROFILE_DIRS=()
@@ -126,11 +126,21 @@ load_profile() {
         source "$file"
         PROFILE_DIRS+=("$ROOT/profiles/$HAXE_PROFILE")
     fi
-    local d p
+    local d p v
+    # A profile can build one OS with another OCaml (OCAML_VERSION_WINDOWS,
+    # _MAC, _LINUX), with its own lock: haxe.opam.ocaml<version>.locked.
+    # The OS is the host's, or BUILD_HAXE_FOR_OS to prepare it from another
+    # host (update-locks.sh, opam-cache.sh).
+    v="OCAML_VERSION_$(echo "${BUILD_HAXE_FOR_OS:-$HOST_OS}" | tr '[:lower:]' '[:upper:]')"
+    PROFILE_LOCK_NAME="haxe.opam.locked"
+    if [ -n "${!v:-}" ]; then
+        OCAML_VERSION="${!v}"
+        PROFILE_LOCK_NAME="haxe.opam.ocaml$OCAML_VERSION.locked"
+    fi
     PROFILE_LOCK=""
     PROFILE_PATCHES=()
     for d in "${PROFILE_DIRS[@]}"; do
-        if [ -f "$d/haxe.opam.locked" ]; then PROFILE_LOCK="$d/haxe.opam.locked"; fi
+        if [ -f "$d/$PROFILE_LOCK_NAME" ]; then PROFILE_LOCK="$d/$PROFILE_LOCK_NAME"; fi
         for p in "$d"/patches/*.patch; do
             if [ -f "$p" ]; then PROFILE_PATCHES+=("$p"); fi
         done

@@ -17,7 +17,7 @@ load_profile
 sanitize_env "$target"
 opam="$(opam_bin "$target")"
 # Written to the most specific profile folder (HAXE_PROFILE_DIR if set).
-lock="${PROFILE_DIRS[${#PROFILE_DIRS[@]}-1]}/haxe.opam.locked"
+lock="${PROFILE_DIRS[${#PROFILE_DIRS[@]}-1]}/$PROFILE_LOCK_NAME"
 
 # The switch only contains Haxe's dependencies, so its installed packages are
 # exactly the dependency closure. The lock is generated from that list rather

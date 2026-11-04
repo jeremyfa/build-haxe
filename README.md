@@ -234,7 +234,7 @@ Not mirrored: the Docker base images (pinned by digest), the packages installed 
 The two maintained Haxe branches need different OCaml dependencies. A profile is a folder in `profiles/`:
 
 - `haxe5` for `development`: OCaml 5.3.0, mbedtls 3.6, ppx_parser.
-- `haxe43` for `4.3_bugfix`: OCaml 5.1.1, mbedtls 2.28, camlp5, ctypes pinned to 0.21.1 (luv 0.5.13 does not build with newer ctypes, like on the official 4.3 CI).
+- `haxe43` for `4.3_bugfix`: OCaml 5.1.1, mbedtls 2.28, camlp5, ctypes pinned to 0.21.1 (luv 0.5.13 does not build with newer ctypes, like on the official 4.3 CI). Windows is built with OCaml 4.14.4 (`OCAML_VERSION_WINDOWS`), like the official 4.3 CI uses 4.14 there: the memory measurement of the compilation server (`libs/objsize`) walks the OCaml 4 heap and crashes with OCaml 5 on Windows.
 
 Both build neko from the same master commit.
 
@@ -243,6 +243,8 @@ A calling project can also give its own profile folder with `HAXE_PROFILE_DIR` (
 ```bash
 HAXE_PROFILE=haxe5 scripts/update-locks.sh mac-arm64
 HAXE_BRANCH=4.3_bugfix ./setup-haxe.sh && HAXE_PROFILE=haxe43 scripts/update-locks.sh mac-arm64
+# the OCaml 4.14 lock of the 4.3 Windows build, resolved on the Mac
+BUILD_HAXE_FOR_OS=windows HAXE_PROFILE=haxe43 scripts/update-locks.sh mac-arm64
 ```
 
 Each OCaml version gets its own opam root (`.cache/opam/<profile>-<target>-ocaml<version>`), so changing it never reuses an old one. `profiles/<profile>/patches/` can hold patches applied to the Haxe sources during the build (with `patch -p1`, to a copy or reverted afterwards). The file name prefix selects the platform (`all-`, `mac-`, `linux-`, `windows-`).
@@ -277,7 +279,8 @@ Linux runs in Docker (`docker/linux-test.Dockerfile`, Ubuntu 22.04 like the offi
 - 4.3: hl is not tested on macOS (the official CI ran it on Intel Macs only; the HashLink 1.x VM is x86_64 and its libraries came from Homebrew);
 - Windows: hl and lua are not set up by build-haxe yet.
 - 4.3, cs on macOS is allowed to fail: one test (`misc/cs/csTwoLibs`) does not compile with the mono 6.14 of Homebrew; it passes with the mono 6.8 of Linux.
-- 4.3, js and php on Windows are allowed to fail: js fails in the server tests (`node test.js` exits with an unhandled ECONNRESET) and php hangs in the unit tests, not investigated yet. Every target is stopped after `TEST_TIMEOUT` seconds (default 2700) with the status `timeout`.
+- Every target is stopped after `TEST_TIMEOUT` seconds (default 2700) with the status `timeout`.
+- On Windows, the php, node, python and java that the GitHub runners have in `PATH` are taken out of it after ours: RunCi 4.3 uses every line of `where php` as the php path.
 
 ### How it stays pinned and self-contained
 

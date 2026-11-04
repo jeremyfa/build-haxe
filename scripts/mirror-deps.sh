@@ -79,7 +79,8 @@ produce() {
         opam-cache)
             file="$staging/$name"
             if [ ! -f "$file" ]; then
-                HAXE_PROFILE="$source" "$ROOT/scripts/opam-cache.sh" "$file" >&2
+                HAXE_PROFILE="${source%%:*}" BUILD_HAXE_FOR_OS="${source#*:}" \
+                    "$ROOT/scripts/opam-cache.sh" "$file" >&2
             fi
             echo "$file"
             ;;

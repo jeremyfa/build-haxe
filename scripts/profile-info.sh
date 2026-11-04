@@ -27,7 +27,7 @@ hash_files() {
 }
 files=("$ROOT/versions.env" "$ROOT"/patches/neko/*.patch "$ROOT"/docker/*.Dockerfile)
 for d in "${PROFILE_DIRS[@]}"; do
-    files+=("$d/profile.env" "$d/haxe.opam.locked" "$d"/patches/*.patch)
+    files+=("$d/profile.env" "$d/$PROFILE_LOCK_NAME" "$d"/patches/*.patch)
 done
 
 echo "HAXE_PROFILE=$HAXE_PROFILE"
