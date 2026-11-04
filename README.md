@@ -288,7 +288,7 @@ RunCi installs part of what it needs by itself, from moving branches and into th
 - RunCi runs once per test target, in a fresh copy of the sources, with `HOME` in the cache, `TZ=UTC`, a UTF-8 locale, and **without `GITHUB_ACTIONS`**, even on GitHub: in CI mode RunCi reinstalls libraries from their default branches and calls `sudo apt-get` and `brew`. The tests marked `#if github` (HTTP echo server, a few timezone checks) are therefore not run.
 
 Not pinned yet:
-- Lua: hererocks downloads Lua, LuaJIT and LuaRocks, and LuaRocks installs the rocks (some from `scm` rockspecs).
+- Lua: LuaJIT (a rolling release, taken from its branch archives) and the rocks LuaRocks installs (some from `scm` rockspecs). The Lua and LuaRocks sources are pinned: they are put in the download cache of hererocks, which checks them against the sha256 it embeds.
 - The haxelib libraries that tink_core's tests install from lib.haxe.org.
 - On macOS, the C libraries of the Lua rocks and mono for cs come from Homebrew: `brew bundle --file=Brewfile.tests`.
 - Testing linux-x64 from an Apple Silicon Mac runs under Rosetta: the image is built without mono (its installation fails there) and LuaJIT 2.0 does not run, so cs and part of lua only pass on a real x64 machine or on the CI.

@@ -295,7 +295,7 @@ Constats qui ont guidé les choix :
 
 Windows (runners GitHub) : le build passe dans le Cygwin d'opam, les tests dans Git Bash. Les outils natifs (opam, objdump, haxelib.exe, node, git) reçoivent des chemins `D:/a/...` (`cygpath -m`) ; opam y installe lui-même les dépendances système ; Strawberry Perl est retiré du PATH (son `patch.exe` plante, son perl n'a pas les modules de camlp5) et les patches passent par `git apply` ; flexlink reçoit `-link -static` ; le générateur Visual Studio de neko vient de `vswhere` (2026 sur les runners actuels).
 
-Reste non figé : les sources que hererocks et LuaRocks téléchargent pour Lua, les bibliothèques que les tests de tink_core installent depuis lib.haxe.org, et sur mac les bibliothèques C des rocks Lua et mono (Homebrew, `Brewfile.tests`). Pas encore fait sous Windows : `hl` (HashLink avec MSVC) et `lua` (msys2).
+Reste non figé : LuaJIT (version continue) et les rocks que LuaRocks installe (les sources de Lua et de LuaRocks sont figées, placées dans le cache de hererocks), les bibliothèques que les tests de tink_core installent depuis lib.haxe.org, et sur mac les bibliothèques C des rocks Lua et mono (Homebrew, `Brewfile.tests`). Pas encore fait sous Windows : `hl` (HashLink avec MSVC) et `lua` (msys2).
 
 ## 7. CI : `.github/workflows/build-haxe.yml`
 

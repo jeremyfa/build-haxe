@@ -37,6 +37,15 @@ chmod +x "$expose/hererocks"
 "$expose/hererocks" --version >&2
 echo "path:$expose"
 
+# Lua and LuaRocks sources in the download cache of hererocks, which checks
+# them against the sha256 it embeds and then never downloads them.
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/hererocks"
+mkdir -p "$cache"
+for k in $TEST_LUA_SOURCES; do
+    f="$(test_file_any "LUASRC_$k")"
+    cp -f "$f" "$cache/$(basename "$f")"
+done
+
 # RunCi 4.3 runs `pip install --user hererocks`: pip finds (PIP_FIND_LINKS,
 # offline) a wheel made here from the same pinned commit. A wheel is a zip of
 # the module and its metadata; it comes from checked sources, so it needs no
@@ -68,5 +77,7 @@ with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
 PY
 echo "env:PIP_NO_INDEX=1"
 echo "env:PIP_PRE=1"
+# replace a hererocks installed by an earlier run in the test home
+echo "env:PIP_UPGRADE=1"
 echo "env:PIP_FIND_LINKS=$( [ "$HOST_OS" = windows ] && cygpath -m "$wheels" || echo "$wheels")"
 echo "env:PIP_DISABLE_PIP_VERSION_CHECK=1"
