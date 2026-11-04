@@ -54,7 +54,9 @@ if [ ! -f "$dir/.done" ]; then
         cd "$dir/node_modules/deasync"
         PATH="$dir/.gyp-bin:$PATH" npm_config_nodedir="$nodedir" node build.js >&2
     )
-    node -e "require('$dir/node_modules/deasync')" || die "deasync does not load"
+    mod="$dir/node_modules/deasync"
+    [ "$HOST_OS" = "windows" ] && mod="$(cygpath -m "$mod")"
+    node -e "require('$mod')" || die "deasync does not load"
     touch "$dir/.done"
 fi
 echo "env:BUILD_HAXE_NODE_MODULES=$dir/node_modules"

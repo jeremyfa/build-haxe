@@ -101,7 +101,10 @@ main() {
     export HOME="$home"
     [ "$os" = "windows" ] && export USERPROFILE="$(cygpath -w "$home")"
     export HAXELIB_PATH="$CACHE_DIR/haxelib/$HAXE_PROFILE-$target"
-    export HAXE_STD_PATH="$out/std"
+    # Not on Windows: haxe finds the std next to haxe.exe, and prints it as
+    # D:\a\...; a Git Bash path here would not match what the misc tests
+    # expect.
+    if [ "$os" = "windows" ]; then unset HAXE_STD_PATH; else export HAXE_STD_PATH="$out/std"; fi
     if [ "$os" = "windows" ]; then
         export PATH="$out:$PATH"
     else

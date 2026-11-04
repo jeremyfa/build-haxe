@@ -27,7 +27,16 @@ if [ ! -f "$php/.done" ]; then
 fi
 
 if [ "$platform" = "WINDOWS_X64" ]; then
+    # The official build loads no extension by default. RunCi passes
+    # tests/PHP.ini for the main tests only, the misc tests run php alone:
+    # php.ini next to php.exe (read from there) enables what the tests use.
+    {
+        echo "extension_dir = \"$(cygpath -m "$php/ext")\""
+        for ext in mbstring sqlite3 pdo_sqlite sockets openssl; do echo "extension=$ext"; done
+    } > "$php/php.ini"
     "$php/php.exe" -v | head -1 >&2
+    modules="$("$php/php.exe" -m | tr -d '\r')"
+    echo "$modules" | grep -qx mbstring || die "PHP in $php does not load mbstring"
 else
     chmod +x "$php/php"
     "$php/php" -v | head -1 >&2
