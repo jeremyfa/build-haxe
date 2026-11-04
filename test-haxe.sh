@@ -181,12 +181,21 @@ main() {
         # timeout) instead of using up the time of the whole job.
         limit=(timeout --kill-after=60 "${TEST_TIMEOUT:-2700}")
         command -v timeout >/dev/null 2>&1 || limit=()
+        # The output goes to the log file, not through a pipe: a process that
+        # a test leaves behind (a node or haxe server on Windows) would keep
+        # a pipe open, and the target would never end.
+        : > "$results/$t.log"
+        tail -n +1 -f "$results/$t.log" &
+        tail_pid=$!
         if [ -n "$args" ]; then
-            (cd "$work/tests" && env -u GITHUB_ACTIONS "${limit[@]+"${limit[@]}"}" haxe --run RunCi "$t" $args) 2>&1 | tee "$results/$t.log"
+            (cd "$work/tests" && env -u GITHUB_ACTIONS "${limit[@]+"${limit[@]}"}" haxe --run RunCi "$t" $args) > "$results/$t.log" 2>&1
         else
-            (cd "$work/tests" && env -u GITHUB_ACTIONS TEST="$t" "${limit[@]+"${limit[@]}"}" haxe RunCi.hxml) 2>&1 | tee "$results/$t.log"
+            (cd "$work/tests" && env -u GITHUB_ACTIONS TEST="$t" "${limit[@]+"${limit[@]}"}" haxe RunCi.hxml) > "$results/$t.log" 2>&1
         fi
-        code="${PIPESTATUS[0]}"
+        code=$?
+        sleep 1
+        kill "$tail_pid" 2>/dev/null
+        wait "$tail_pid" 2>/dev/null
         set -e
         duration=$(( $(date +%s) - start ))
         if [ "$code" = 0 ]; then
