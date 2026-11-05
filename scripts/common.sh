@@ -351,6 +351,60 @@ replace_file() {
     mv -f "$dst.tmp.$$" "$dst"
 }
 
+# ---- Docker images
+# The images of the Linux build and tests are published on ghcr.io, tagged
+# with a hash of their Dockerfile and build arguments: an image is built once
+# (its apt packages come from mirrors that have outages, snapshot.debian.org
+# especially), then pulled.
+#   BUILD_HAXE_IMAGE_REGISTRY  where they are, "none" to always build them
+#   BUILD_HAXE_PUSH_IMAGES     1: push the images built here (CI of build-haxe)
+: "${BUILD_HAXE_IMAGE_REGISTRY:=ghcr.io/jeremyfa/build-haxe}"
+
+# Up to 5 tries, waiting a minute longer each time.
+docker_build_retry() {
+    local i
+    for i in 1 2 3 4 5; do
+        docker build "$@" && return 0
+        [ "$i" -lt 5 ] || return 1
+        warn "docker build failed, retrying in $((i * 60))s ($i/5)"
+        sleep $((i * 60))
+    done
+}
+
+# ensure_image <name> <docker platform> <Dockerfile> [docker build arguments]
+# Makes the image available locally (already there, pulled, or built) and
+# prints its local tag.
+ensure_image() {
+    local name="$1" platform="$2" dockerfile="$3"
+    shift 3
+    local hash tag remote
+    hash="$({ cat "$dockerfile"; printf '%s\n' "$platform" "$@"; } | sha256_stdin | cut -c1-16)"
+    tag="build-haxe-$name:${platform#linux/}-$hash"
+    remote="$BUILD_HAXE_IMAGE_REGISTRY/$name:${platform#linux/}-$hash"
+    if docker image inspect "$tag" >/dev/null 2>&1; then
+        echo "$tag"
+        return 0
+    fi
+    if [ "$BUILD_HAXE_IMAGE_REGISTRY" != "none" ] \
+        && docker pull -q --platform "$platform" "$remote" >/dev/null 2>&1; then
+        log "image $name from $remote" >&2
+        docker tag "$remote" "$tag"
+        echo "$tag"
+        return 0
+    fi
+    log "building image $name ($platform)" >&2
+    docker_build_retry --platform "$platform" "$@" -t "$tag" -f "$dockerfile" "$(dirname "$dockerfile")" >&2 \
+        || die "could not build the image $name"
+    if [ "${BUILD_HAXE_PUSH_IMAGES:-0}" = "1" ] && [ "$BUILD_HAXE_IMAGE_REGISTRY" != "none" ]; then
+        if docker tag "$tag" "$remote" && docker push -q "$remote" >&2; then
+            log "image $name pushed to $remote" >&2
+        else
+            warn "could not push $remote"
+        fi
+    fi
+    echo "$tag"
+}
+
 # ---- dependency mirror
 # Every pinned dependency is also published as an asset of a release of
 # https://github.com/jeremyfa/haxe-deps (scripts/mirror-deps.sh). Downloads try

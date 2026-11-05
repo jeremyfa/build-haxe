@@ -149,26 +149,10 @@ if [ "$HOST_OS" = "mac" ] && [ "$docker_platform" = "linux/amd64" ]; then
     [ "$got" = "x86_64" ] || die "Docker cannot run linux/amd64 containers (got '$got'). Enable 'Use Rosetta for x86_64/amd64 emulation' in Docker Desktop settings."
 fi
 
-alpine_tag="build-haxe-alpine:$arch_arg"
-glibc_tag="build-haxe-glibc:$arch_arg"
-# Package mirrors (snapshot.debian.org especially) have short outages: each
-# image build is tried 3 times.
-# snapshot.debian.org sometimes times out for several minutes: up to 5
-# tries, waiting a minute longer each time.
-docker_build_retry() {
-    local i
-    for i in 1 2 3 4 5; do
-        docker build "$@" && return 0
-        [ "$i" -lt 5 ] || return 1
-        warn "docker build failed, retrying in $((i * 60))s ($i/5)"
-        sleep $((i * 60))
-    done
-}
-log "building images"
-docker_build_retry --platform "$docker_platform" --build-arg ALPINE_IMAGE="$ALPINE_IMAGE" \
-    -t "$alpine_tag" -f "$ROOT/docker/linux.Dockerfile" "$ROOT/docker"
-docker_build_retry --platform "$docker_platform" --build-arg BASE_IMAGE="$GLIBC_IMAGE" --build-arg DEBIAN_SNAPSHOT="$GLIBC_SNAPSHOT" \
-    -t "$glibc_tag" -f "$ROOT/docker/linux-glibc.Dockerfile" "$ROOT/docker"
+alpine_tag="$(ensure_image alpine "$docker_platform" "$ROOT/docker/linux.Dockerfile" \
+    --build-arg ALPINE_IMAGE="$ALPINE_IMAGE")"
+glibc_tag="$(ensure_image glibc "$docker_platform" "$ROOT/docker/linux-glibc.Dockerfile" \
+    --build-arg BASE_IMAGE="$GLIBC_IMAGE" --build-arg DEBIAN_SNAPSHOT="$GLIBC_SNAPSHOT")"
 
 # Mounts and environment shared by the stages
 mounts=(-v "$ROOT:/workspace")

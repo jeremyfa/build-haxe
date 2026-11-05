@@ -179,7 +179,11 @@ Every pinned dependency is also published, byte for byte, as an asset of a relea
 
 `scripts/deps-manifest.sh` lists every asset. `scripts/mirror-deps.sh` publishes what is missing and never replaces an asset; the `Mirror dependencies` workflow runs it on every push that changes a versions file or a profile (secret `HAXE_DEPS_TOKEN`). `scripts/mirror-deps.sh --check` reports missing or wrong assets; the build workflow runs it first and shows the result in its summary. For a new git dependency without sha256, `mirror-deps.sh` makes the archive, prints the sha256 to copy into the versions file and stops.
 
-Not mirrored: the Docker base images (pinned by digest), the packages installed in them, Cygwin and setup-ocaml on Windows, Homebrew host tools.
+Not mirrored: Cygwin and setup-ocaml on Windows, Homebrew host tools.
+
+### Docker images
+
+The three Linux images (`docker/linux.Dockerfile` for the static haxe, `linux-glibc.Dockerfile` for neko and haxelib, `linux-test.Dockerfile` for the tests) are published on `ghcr.io/jeremyfa/build-haxe/<alpine|glibc|test>`, tagged `<arch>-<hash>`, where the hash covers the Dockerfile and its build arguments (base images pinned by digest, Debian snapshot date). `ensure_image` in `scripts/common.sh` uses the local image if present, otherwise pulls it, otherwise builds it (up to 5 tries, snapshot.debian.org has outages). The CI of build-haxe pushes the images it had to build (`BUILD_HAXE_PUSH_IMAGES=1`), so changing a Dockerfile builds the new image once. `BUILD_HAXE_IMAGE_REGISTRY=none` always builds locally.
 
 ## Tests
 
@@ -217,4 +221,4 @@ Not pinned yet: LuaJIT (rolling) and the rocks LuaRocks installs; the haxelib li
 
 ## The build workflow
 
-`.github/workflows/build-haxe.yml` runs every day at 03:00 UTC for `development` and `4.3_bugfix`, on pushes to `main` that change the build scripts, and by hand (`workflow_dispatch`). The `resolve` job turns the refs into commits and skips those that already have a release. One `build` job per platform uses the composite action (macOS universal on one arm64 runner, x86_64 under Rosetta; Linux in the same Docker images as local builds; Windows in the Cygwin of `ocaml/setup-ocaml`). One `test` job per build, platform and target runs on the archive the build made (`scripts/test/import-build.sh`, matrix from `scripts/test/test-matrix.sh`). `publish-release` runs only when every build and test job passed, for the daily run and for manual runs with `publish` checked: a push to `main` builds and tests, it never publishes. Each platform's Docker image build is retried when snapshot.debian.org is down.
+`.github/workflows/build-haxe.yml` runs every day at 03:00 UTC for `development` and `4.3_bugfix`, on pushes to `main` that change the build scripts, and by hand (`workflow_dispatch`). The `resolve` job turns the refs into commits and skips those that already have a release. One `build` job per platform uses the composite action (macOS universal on one arm64 runner, x86_64 under Rosetta; Linux in the same Docker images as local builds; Windows in the Cygwin of `ocaml/setup-ocaml`). One `test` job per build, platform and target runs on the archive the build made (`scripts/test/import-build.sh`, matrix from `scripts/test/test-matrix.sh`). `publish-release` runs only when every build and test job passed, for the daily run and for manual runs with `publish` checked: a push to `main` builds and tests, it never publishes. The Linux jobs pull their Docker images from ghcr.io (see [Docker images](#docker-images)).

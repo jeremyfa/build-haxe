@@ -70,9 +70,8 @@ main() {
         docker info >/dev/null 2>&1 || die "Docker is not running"
         with_mono=1
         [ "$HOST_OS" = "mac" ] && [ "$docker_platform" = "linux/amd64" ] && with_mono=0
-        docker build -q --platform "$docker_platform" --build-arg TEST_IMAGE="$TEST_IMAGE" \
-            --build-arg WITH_MONO="$with_mono" \
-            -t "build-haxe-test:$arch_arg" -f "$ROOT/docker/linux-test.Dockerfile" "$ROOT/docker" >/dev/null
+        test_tag="$(ensure_image test "$docker_platform" "$ROOT/docker/linux-test.Dockerfile" \
+            --build-arg TEST_IMAGE="$TEST_IMAGE" --build-arg WITH_MONO="$with_mono")"
         mounts=(-v "$ROOT:/workspace")
         run_env=(-e HAXE_PROFILE="$HAXE_PROFILE" -e JOBS="$JOBS")
         if [ -n "${BUILD_HAXE_CACHE_DIR:-}" ]; then
@@ -90,7 +89,7 @@ main() {
             run_env+=(-e "$v=${!v}")
         done
         exec docker run --rm --platform "$docker_platform" "${mounts[@]}" "${run_env[@]}" -w /workspace \
-            "build-haxe-test:$arch_arg" ./test-haxe.sh "$target" "$tests"
+            "$test_tag" ./test-haxe.sh "$target" "$tests"
     fi
 
     # ---- environment shared by every test target
