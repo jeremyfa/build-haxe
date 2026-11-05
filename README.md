@@ -96,7 +96,7 @@ HAXE_BRANCH=4.3_bugfix ./build-haxe-mac.sh
 HAXE_REPO=https://github.com/jeremyfa/haxe.git HAXE_BRANCH=new_csharp ./build-haxe-mac.sh
 ```
 
-The clone lives in `haxe/`. To build from another repository, run `./clean-haxe.sh` first (the scripts refuse to switch the origin of an existing clone).
+The clone lives in `haxe/`. The scripts refuse to switch the origin of an existing clone: to build from another repository, delete `haxe/`, `haxe.info` and `haxe.files` first, or give a checkout of the fork with `HAXE_SRC_DIR`. Avoid `./clean-haxe.sh` for this: it also deletes `.cache/` and `build/`, which then have to be downloaded and compiled again. The profile is detected from the `haxe.opam` of the fork, like for the official repository.
 
 ## Using build-haxe from another project
 
@@ -324,4 +324,31 @@ Deletes `haxe/`, `.cache/`, `build/` and the Docker volumes used for the Linux o
 - on pushes to `main` that change the build scripts;
 - manually (`workflow_dispatch`), with any repository, branch or commit, profile, and options to run tests and publish.
 
-A build is skipped when the release `haxe-<profile>-<commit>` already exists. Each platform is built by the composite action `.github/actions/build-haxe`, the one a calling project uses (macOS universal on one arm64 runner, x86_64 under Rosetta). Linux uses the same Docker images as local builds.
+The daily and push builds run the full test suite and publish a release when the build and every test pass. A build is skipped when the release `haxe-<profile>-<commit>` already exists.
+
+### Publishing a release by hand
+
+In the GitHub interface: **Actions**, **Build Haxe**, **Run workflow**. The inputs:
+
+| Input | Default | |
+|---|---|---|
+| `repo` | `https://github.com/HaxeFoundation/haxe.git` | repository to build, a fork works the same way |
+| `ref` | `development` | branch, or full commit (40 characters); several, separated by spaces, build one release each (`development 4.3_bugfix`) |
+| `profile` | `auto` | `haxe5` or `haxe43` to force one, `auto` reads the `haxe.opam` of the commit |
+| `run_tests` | `all` | `all`, `default` (`DEFAULT_TEST_TARGETS` of the profile) or `none` |
+| `publish` | checked | uncheck it to build and test without publishing |
+
+With the `gh` CLI:
+
+```bash
+# Haxe 5 and Haxe 4.3 from the official repository
+gh workflow run build-haxe.yml -R jeremyfa/build-haxe -f ref=development
+gh workflow run build-haxe.yml -R jeremyfa/build-haxe -f ref=4.3_bugfix
+# a branch of a fork
+gh workflow run build-haxe.yml -R jeremyfa/build-haxe \
+  -f repo=https://github.com/me/haxe.git -f ref=my-branch
+# build and test only
+gh workflow run build-haxe.yml -R jeremyfa/build-haxe -f ref=development -f publish=false
+```
+
+The release is published only when the four builds and every test job pass. It is named `haxe-<profile>-<first 10 characters of the commit>`, its notes link to the commit in the built repository, and it holds `haxe-<profile>-<commit>-mac-universal.zip`, `-linux-x64.tar.gz`, `-linux-arm64.tar.gz`, `-windows-x64.zip` and `commit.txt`. A commit that already has a release is not built again. Delete the release (and its tag) to publish it again. Each platform is built by the composite action `.github/actions/build-haxe`, the one a calling project uses (macOS universal on one arm64 runner, x86_64 under Rosetta). Linux uses the same Docker images as local builds.
