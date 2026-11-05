@@ -153,13 +153,15 @@ alpine_tag="build-haxe-alpine:$arch_arg"
 glibc_tag="build-haxe-glibc:$arch_arg"
 # Package mirrors (snapshot.debian.org especially) have short outages: each
 # image build is tried 3 times.
+# snapshot.debian.org sometimes times out for several minutes: up to 5
+# tries, waiting a minute longer each time.
 docker_build_retry() {
     local i
-    for i in 1 2 3; do
+    for i in 1 2 3 4 5; do
         docker build "$@" && return 0
-        [ "$i" -lt 3 ] || return 1
-        warn "docker build failed, retrying in 30s ($i/3)"
-        sleep 30
+        [ "$i" -lt 5 ] || return 1
+        warn "docker build failed, retrying in $((i * 60))s ($i/5)"
+        sleep $((i * 60))
     done
 }
 log "building images"
