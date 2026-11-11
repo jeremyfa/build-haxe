@@ -8,7 +8,7 @@ Technical details (portability, pinning, mirror, profiles, test setup) are in [I
 
 [Releases](../../releases): one release per built commit, named `haxe-<profile>-<commit>` (`haxe5` is `development`, `haxe43` is `4.3_bugfix`), with an archive per platform. Each archive holds one `haxe/` folder that works wherever it is copied.
 
-A workflow runs every day at 03:00 UTC and publishes `development` and `4.3_bugfix` when their latest commit has no release yet and all tests pass.
+Nothing is built automatically when Haxe gets new commits: releases are published by hand (below).
 
 ## Publish a release
 

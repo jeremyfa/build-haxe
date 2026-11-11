@@ -21,8 +21,6 @@ on:
         description: Publish a GitHub release
         type: boolean
         default: true
-  schedule:
-    - cron: '0 3 * * *'
   push:
     branches: [ main ]
     paths:
@@ -287,13 +285,13 @@ jobs:
   publish-release:
     name: Publish release (${{ matrix.build.profile }} ${{ matrix.build.short }})
     needs: [resolve, build, test]
-    # Only when the build and every test job passed (or tests were not run).
-    # Daily builds and manual runs publish; a push to main only checks the
+    # Only when the build and every test job passed (or tests were not run),
+    # for manual runs with publish checked. A push to main only checks the
     # scripts.
     if: >-
       always() && needs.resolve.outputs.any == 'true' && needs.build.result == 'success'
       && (needs.test.result == 'success' || needs.test.result == 'skipped')
-      && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+      && github.event_name == 'workflow_dispatch' && inputs.publish
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
