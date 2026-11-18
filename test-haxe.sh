@@ -71,7 +71,7 @@ main() {
         with_mono=1
         [ "$HOST_OS" = "mac" ] && [ "$docker_platform" = "linux/amd64" ] && with_mono=0
         test_tag="$(ensure_image test "$docker_platform" "$ROOT/docker/linux-test.Dockerfile" \
-            --build-arg TEST_IMAGE="$TEST_IMAGE" --build-arg WITH_MONO="$with_mono")"
+            --build-arg TEST_IMAGE="$TEST_IMAGE" --build-arg WITH_MONO="$with_mono" --build-arg WITH_DOTNET="$with_mono")"
         mounts=(-v "$ROOT:/workspace")
         run_env=(-e HAXE_PROFILE="$HAXE_PROFILE" -e JOBS="$JOBS")
         if [ -n "${BUILD_HAXE_CACHE_DIR:-}" ]; then

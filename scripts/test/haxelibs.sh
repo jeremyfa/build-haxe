@@ -25,6 +25,16 @@ for n in $TEST_GIT_DEPS; do
     log "haxelib $lib: $(haxelib path "$lib" 2>/dev/null | head -1)"
 done
 
+# The new C# target (4.3 sources with src/generators/cs) needs the fork of hxcs
+# that has the .NET Standard DLLs. RunCi skips its own `haxelib dev hxcs` when
+# a hxcs is already installed, so the fork replaces the one set above.
+if [ -d "$HAXE_DIR/src/generators/cs" ]; then
+    src="$(git_dep_src HXCS_JEREMYFA)"
+    [ "$HOST_OS" = "windows" ] && src="$(cygpath -m "$src")"
+    haxelib dev hxcs "$src" >/dev/null
+    log "haxelib hxcs (fork): $(haxelib path hxcs 2>/dev/null | head -1)"
+fi
+
 tests="${1:-}"
 if in_list cpp "$tests" || in_list cppia "$tests"; then
     hxcpp="$(git_dep_src HXCPP)"

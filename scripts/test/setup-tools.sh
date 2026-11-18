@@ -28,7 +28,9 @@ tools_for() {
         php) echo "php" ;;
         hl) echo "hashlink" ;;
         lua) echo "python lua" ;;
-        cs) echo "mono" ;;
+        # the new C# target (src/generators/cs) runs the output with dotnet,
+        # the old one compiles it with mono
+        cs) if [ -d "$HAXE_DIR/src/generators/cs" ]; then echo "dotnet"; else echo "mono"; fi ;;
         jvm|java) echo "jdk" ;;
         *) echo "" ;;
     esac

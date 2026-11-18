@@ -1,6 +1,6 @@
 # Test image (Ubuntu 22.04, the system of the official Haxe CI, whose package
 # names RunCi expects). It only carries system tools and libraries (HashLink
-# and Lua rock dependencies, mono for the cs target of 4.3): the
+# and Lua rock dependencies, mono and the .NET SDK for the cs target of 4.3): the
 # language toolchains (Python, PyPy, Node.js...) come from the pinned archives
 # of test-versions.env, installed by scripts/test/setup-tools.sh, as on macOS.
 ARG TEST_IMAGE
@@ -22,6 +22,14 @@ ARG WITH_MONO=1
 RUN if [ "$WITH_MONO" = 1 ]; then \
         DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
             mono-devel mono-mcs; \
+    fi
+
+# .NET SDK and clang (the new C# target of 4.3, which also builds the tests
+# with NativeAOT). WITH_DOTNET=0 skips it, like WITH_MONO.
+ARG WITH_DOTNET=1
+RUN if [ "$WITH_DOTNET" = 1 ]; then \
+        DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+            dotnet-sdk-8.0 clang; \
     fi
 
 # UTF-8 locale, as on the official CI runners: the sys tests use file names
