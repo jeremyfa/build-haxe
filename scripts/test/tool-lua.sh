@@ -34,6 +34,20 @@ else
     printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$python" "$src/hererocks.py" > "$expose/hererocks"
 fi
 chmod +x "$expose/hererocks"
+# Recent RunCi 4.3 runs `pipx install git+https://github.com/luarocks/hererocks.git`
+# on Linux, and the test image has no pipx. hererocks is already on the PATH,
+# so this pipx accepts that install and does nothing else.
+if [ "$platform" != "WINDOWS_X64" ]; then
+    cat > "$expose/pipx" <<'SH'
+#!/bin/sh
+case "$1 $*" in
+    "install "*hererocks*) exit 0 ;;
+esac
+echo "pipx (build-haxe): only the hererocks install of RunCi is supported" >&2
+exit 1
+SH
+    chmod +x "$expose/pipx"
+fi
 "$expose/hererocks" --version >&2
 echo "path:$expose"
 
