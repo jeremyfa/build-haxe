@@ -667,10 +667,19 @@ sanitize_env() {
             # Strawberry Perl (on the GitHub runners): its perl lacks the
             # modules opam installs for the Cygwin perl (camlp5 needs them),
             # and its old patch.exe crashes.
-            PATH="$(echo "$PATH" | tr ':' '\n' | grep -v -i strawberry | paste -s -d: -)"
+            # Visual Studio's tools too, when a machine has them in its PATH:
+            # the configure scripts of the mingw builds would take its
+            # dumpbin.exe for nm, and libtool then builds no DLL (libuv of
+            # luv). neko's CMake finds Visual Studio by itself.
+            PATH="$(echo "$PATH" | tr ':' '\n' | grep -v -i -e strawberry -e 'microsoft visual studio' | paste -s -d: -)"
             export PATH="$neko:$PATH"
             [ -z "$keep_caml_ld" ] || export CAML_LD_LIBRARY_PATH="$keep_caml_ld"
             unset OPAMSWITCH
+            # On a machine whose opam root holds several switches (not a
+            # runner of setup-ocaml, where the switch of the build is the
+            # default one), BUILD_HAXE_OPAM_SWITCH names the switch to use:
+            # without it opam would pin and install in the default switch.
+            [ -z "${BUILD_HAXE_OPAM_SWITCH:-}" ] || export OPAMSWITCH="$BUILD_HAXE_OPAM_SWITCH"
             ;;
     esac
 }

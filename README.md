@@ -38,13 +38,14 @@ The release is created only when the four builds and every test pass. A commit t
 
 ## Build locally
 
-Requirements: Xcode Command Line Tools, Homebrew (`brew bundle`), Rosetta for x86_64, Docker for Linux. Windows builds only run on GitHub Actions.
+Requirements: Xcode Command Line Tools, Homebrew (`brew bundle`), Rosetta for x86_64, Docker for Linux. On Windows: Git for Windows, opam 2.2 or newer, CMake and Visual Studio 2022 with the C++ tools.
 
 ```bash
 ./build-haxe-mac.sh              # macOS universal
 ./build-haxe-linux.sh arm64      # Linux arm64 (Docker)
 ./build-haxe-linux.sh x64        # Linux x64 (Docker)
 ./build-haxe-all.sh              # the three above
+./build-haxe-windows-local.sh    # Windows x64, on a Windows machine, from Git Bash
 ```
 
 Output: `build/<profile>/<target>/<build id>/haxe/`, archive in `build/archives/`. The first build compiles OCaml and its packages (about 10 minutes); the rest is cached in `.cache/`.

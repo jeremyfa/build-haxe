@@ -55,7 +55,7 @@ The `haxe/` folder never uses files installed elsewhere on the machine:
 
 Outputs go to `build/<profile>/<target>/<build id>/haxe/` and archives to `build/archives/haxe-<profile>-<build id>-<target>.{zip,tar.gz}`. The build id is the short commit, with `-dirty` when the sources have local changes.
 
-Windows, on a machine with opam 2.2+ and a mingw switch, from its Cygwin bash: `opam exec -- bash ./build-haxe-windows.sh`.
+Windows, on a Windows machine, from Git Bash: `./build-haxe-windows-local.sh`. It prepares what the GitHub action gives `build-haxe-windows.sh`, then starts it in the Cygwin bash of opam: an opam switch of its own (`build-haxe-<profile>`, the mingw port of the profile's OCaml, from the pinned opam-repository snapshot; the other switches of the opam root are left alone, and `BUILD_HAXE_OPAM_SWITCH` names another switch to use), the copy of the sources (git for Windows cannot read Cygwin paths), a portable Strawberry Perl in `.cache/tools` for neko's build of OpenSSL, and the Cygwin tools first in the `PATH`. Windows' Developer Mode is not needed: without the right to create native symlinks, the Cygwin packages are installed with Cygwin's own symlinks.
 
 ### Local cache
 

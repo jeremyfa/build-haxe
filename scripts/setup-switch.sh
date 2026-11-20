@@ -83,9 +83,11 @@ for pin in ${OPAM_PINS:-}; do
     fi
 done
 
-# opam is a native program on Windows: give it a D:/a/... path.
+# opam is a native program on Windows: give it a D:\a\... path. With
+# forward slashes (D:/a/...), opam 2.5 takes the argument for a package name
+# and refuses its colon.
 haxe_src="$HAXE_DIR"
-[ "$os" = "windows" ] && haxe_src="$(cygpath -m "$HAXE_DIR")"
+[ "$os" = "windows" ] && haxe_src="$(cygpath -w "$HAXE_DIR")"
 # System dependencies: on macOS and Linux they are provided by the build
 # (static C libraries) or the image, and opam must not look for packages.
 # On Windows opam installs them in its own Cygwin (pkgconf, the mingw
@@ -102,10 +104,21 @@ if [ "$os" = "windows" ]; then
         root="$(cygpath -u "$("$opam" var root | tr -d '\r')")"
         setup="$root/.cygwin/setup-x86_64.exe"
         [ -f "$setup" ] || die "Cygwin setup program not found at $setup"
+        # Native symlinks need the SeCreateSymbolicLink privilege or Windows'
+        # Developer Mode (the GitHub runners have it). On a machine without
+        # it, the setup program refuses `--symlink-type native`: Cygwin's own
+        # symlinks are used, as in the Cygwin opam installed there.
+        symlinks=(--symlink-type native)
+        probe="$(mktemp -d)"
+        if ! (cd "$probe" && : > target && CYGWIN=winsymlinks:nativestrict ln -s target link) 2>/dev/null; then
+            symlinks=(--symlink-type sys)
+            log "no right to create native symlinks: Cygwin symlinks"
+        fi
+        rm -rf "$probe"
         log "installing Cygwin packages: $CYGWIN_PACKAGES"
         "$setup" --root "$(cygpath -w "$root/.cygwin/root")" --quiet-mode noinput --no-shortcuts \
             --no-startmenu --no-desktop --no-admin --no-version-check --no-write-registry \
-            --packages "$(echo $CYGWIN_PACKAGES | tr ' ' ',')" --symlink-type native --only-site \
+            --packages "$(echo $CYGWIN_PACKAGES | tr ' ' ',')" "${symlinks[@]+"${symlinks[@]}"}" --only-site \
             --site https://cygwin.mirror.constant.com/ --local-package-dir "$(cygpath -w "$root/.cygwin/cache")" \
             >&2 || die "could not install the Cygwin packages $CYGWIN_PACKAGES"
     fi
